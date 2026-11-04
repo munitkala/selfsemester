@@ -1,0 +1,273 @@
+pub mod claude;
+pub mod course;
+pub mod db;
+pub mod paths;
+pub mod worker;
+
+use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
+use course::{marking, pipeline, schedule::LatePolicy, seal::Sealer};
+use paths::AppPaths;
+use rusqlite::Connection;
+use serde::Serialize;
+use serde_json::Value;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter};
+
+pub struct AppState {
+    pub paths: AppPaths,
+    pub db: Arc<Mutex<Connection>>,
+    pub runner: Arc<dyn ClaudeRunner>,
+    pub sealer: Sealer,
+}
+
+type Res<T> = Result<T, String>;
+
+fn err<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+/// Tell every window that data changed, so open screens reload.
+fn changed(app: &AppHandle) {
+    let _ = app.emit("data-changed", ());
+}
+
+struct TauriShell(AppHandle);
+impl worker::Shell for TauriShell {
+    fn notify(&self, title: &str, body: &str) {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = self.0.notification().builder().title(title).body(body).show();
+    }
+    fn changed(&self) {
+        changed(&self.0);
+    }
+}
+
+// ---------- status ----------
+
+#[derive(Serialize)]
+struct AppStatus {
+    claude: ClaudeStatus,
+    data_dir: String,
+    user_dir: String,
+    schema_version: u32,
+    jobs: course::JobSummary,
+}
+
+#[tauri::command]
+async fn app_status(state: tauri::State<'_, AppState>) -> Res<AppStatus> {
+    let runner = state.runner.clone();
+    // `claude --version` / `auth status` spawn processes; keep them off the UI thread.
+    let claude = tauri::async_runtime::spawn_blocking(move || runner.status()).await.map_err(err)?;
+    let conn = state.db.lock().unwrap();
+    Ok(AppStatus {
+        claude,
+        data_dir: state.paths.data_dir.display().to_string(),
+        user_dir: state.paths.user_dir.display().to_string(),
+        schema_version: db::schema_version(&conn).map_err(err)?,
+        jobs: course::job_summary(&conn, None).map_err(err)?,
+    })
+}
+
+#[derive(Serialize)]
+struct TestResult {
+    job: db::jobs::Job,
+    result: Option<Value>,
+}
+
+/// Queue one tiny Haiku call and wait for the worker to run it, to prove Claude Code works with the subscription.
+#[tauri::command]
+async fn run_test_stage(state: tauri::State<'_, AppState>) -> Res<TestResult> {
+    let req = StageRequest {
+        tier: Tier::Haiku,
+        system: Some("You check that SelfSemester can reach Claude. Answer only with the requested JSON.".into()),
+        prompt: "Reply with ok=true and one short, encouraging sentence for someone starting a new course.".into(),
+        schema: serde_json::json!({
+            "type": "object",
+            "properties": { "ok": {"type": "boolean"}, "message": {"type": "string"} },
+            "required": ["ok", "message"],
+            "additionalProperties": false
+        }),
+        tools: vec![],
+        add_dirs: vec![],
+    };
+    let id = db::jobs::enqueue(&state.db.lock().unwrap(), None, "test", &req).map_err(err)?;
+    for _ in 0..(10 * 60 * 2) {
+        {
+            let conn = state.db.lock().unwrap();
+            let job = db::jobs::get(&conn, id).map_err(err)?.ok_or("job vanished")?;
+            if matches!(job.status.as_str(), "done" | "failed" | "waiting_usage") {
+                let result = db::jobs::result(&conn, id).map_err(err)?;
+                return Ok(TestResult { job, result });
+            }
+        }
+        tokio_sleep(500).await;
+    }
+    Err("The test call is taking too long. Check Claude Code in a terminal.".into())
+}
+
+async fn tokio_sleep(ms: u64) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
+}
+
+/// Queue state only (cheap: no Claude Code process is started).
+#[tauri::command]
+fn jobs_status(state: tauri::State<'_, AppState>) -> Res<course::JobSummary> {
+    course::job_summary(&state.db.lock().unwrap(), None).map_err(err)
+}
+
+// ---------- courses ----------
+
+#[tauri::command]
+fn list_courses(state: tauri::State<'_, AppState>) -> Res<Vec<course::CourseCard>> {
+    course::list(&state.db.lock().unwrap())
+}
+
+#[tauri::command]
+fn get_course(state: tauri::State<'_, AppState>, id: String) -> Res<course::CourseView> {
+    course::view(&state.db.lock().unwrap(), &state.paths, &id)
+}
+
+#[tauri::command]
+fn create_course(app: AppHandle, state: tauri::State<'_, AppState>, subject: String, notes: String) -> Res<String> {
+    let id = pipeline::create(&state.db.lock().unwrap(), &subject, &notes)?;
+    changed(&app);
+    Ok(id)
+}
+
+#[tauri::command]
+fn answer_intake(app: AppHandle, state: tauri::State<'_, AppState>, id: String, answers: Value) -> Res<()> {
+    pipeline::answer_intake(&state.db.lock().unwrap(), &id, &answers)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn choose_bundle(app: AppHandle, state: tauri::State<'_, AppState>, id: String, choice: String) -> Res<()> {
+    pipeline::choose_bundle(&state.db.lock().unwrap(), &id, &choice)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn approve_course(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    start_date: String,
+    late_policy: LatePolicy,
+    on_transcript: bool,
+) -> Res<()> {
+    let start = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").map_err(|_| "Pick a valid start date.")?;
+    pipeline::approve(&state.db.lock().unwrap(), &id, start, &late_policy, on_transcript)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn retry_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<usize> {
+    let n = pipeline::retry(&state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    Ok(n)
+}
+
+#[tauri::command]
+fn delete_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    pipeline::delete(&state.db.lock().unwrap(), &state.paths, &id)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn today(state: tauri::State<'_, AppState>) -> Res<course::Today> {
+    course::today(&state.db.lock().unwrap())
+}
+
+// ---------- items ----------
+
+#[tauri::command]
+fn get_item(state: tauri::State<'_, AppState>, id: String) -> Res<course::ItemView> {
+    course::item(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id)
+}
+
+#[tauri::command]
+fn mark_lesson_read(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    marking::mark_read(&state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn submit_item(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    text_answer: String,
+    answers: Value,
+    files: Vec<String>,
+) -> Res<marking::SubmitOutcome> {
+    let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
+    let out = marking::submit(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, &text_answer, &answers, &files, chrono::Utc::now())?;
+    changed(&app);
+    Ok(out)
+}
+
+#[tauri::command]
+fn get_transcript(state: tauri::State<'_, AppState>) -> Res<course::TranscriptView> {
+    course::transcript(&state.db.lock().unwrap())
+}
+
+/// Open one of the app's own folders (course archive, Documents folder) in File Explorer.
+#[tauri::command]
+fn open_folder(app: AppHandle, state: tauri::State<'_, AppState>, path: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = PathBuf::from(&path);
+    if !(p.starts_with(&state.paths.user_dir) || p.starts_with(&state.paths.data_dir)) || !p.is_dir() {
+        return Err("That folder isn't one of SelfSemester's.".into());
+    }
+    app.opener().open_path(path, None::<&str>).map_err(err)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let paths = AppPaths::standard().expect("standard folders");
+    paths.ensure().expect("create app folders");
+    let conn = db::open(&paths.db_file()).expect("open database");
+    db::jobs::requeue_interrupted(&conn).expect("requeue jobs");
+    let sealer = Sealer::load(&conn).expect("seal key");
+    let runner: Arc<dyn ClaudeRunner> = Arc::new(CliRunner::new(paths.claude_workdir()));
+    let db = Arc::new(Mutex::new(conn));
+
+    let worker = Arc::new(worker::Worker { paths: paths.clone(), db: db.clone(), runner: runner.clone(), sealer: sealer.clone() });
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState { paths, db, runner, sealer })
+        .setup(move |app| {
+            worker.clone().spawn(Arc::new(TauriShell(app.handle().clone())));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            app_status,
+            run_test_stage,
+            jobs_status,
+            list_courses,
+            get_course,
+            create_course,
+            answer_intake,
+            choose_bundle,
+            approve_course,
+            retry_course,
+            delete_course,
+            today,
+            get_item,
+            mark_lesson_read,
+            submit_item,
+            get_transcript,
+            open_folder
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

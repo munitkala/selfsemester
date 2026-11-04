@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>SelfSemester</title>
+  <rect width="1024" height="1024" rx="210" fill="#111111"/>
+  <!-- cap band -->
+  <path d="M292 500 V668 C292 668 382 760 512 760 C642 760 732 668 732 668 V500 L512 604 Z" fill="#FFD21F"/>
+  <!-- board, outlined in black so it reads apart from the band -->
+  <polygon points="512,236 888,414 512,592 136,414" fill="#FFD21F" stroke="#111111" stroke-width="30" stroke-linejoin="round"/>
+  <!-- tassel -->
+  <path d="M512 414 L790 470 V668" fill="none" stroke="#111111" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M512 414 L790 470 V668" fill="none" stroke="#FFD21F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M762 668 H818 L834 760 H746 Z" fill="#FFD21F"/>
+  <circle cx="512" cy="414" r="22" fill="#111111"/>
+</svg>
