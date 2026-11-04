@@ -57,6 +57,22 @@ courses, under your agreement with Anthropic. SelfSemester never reads, stores o
 | `%LOCALAPPDATA%\SelfSemester` | Database, course files, sealed answer keys, submissions |
 | `Documents\SelfSemester\Completed` | Archives of finished courses: summary, lesson notes, your work, feedback, reference list |
 
+## Legal and responsible use
+
+Read [`DISCLAIMER.md`](DISCLAIMER.md) before using SelfSemester; the app also asks you to accept its key points the
+first time it opens. In short:
+
+- **No warranty.** It's free software provided as is. The authors aren't liable for any loss, including wrong marks,
+  lost data or usage on your Claude account. You use it at your own risk.
+- **Not professional advice.** Courses are AI-generated self-study material. For medicine, law, finance, safety or
+  any subject where a mistake could hurt someone, check everything with a qualified professional.
+- **Personal study only.** Don't publish or sell generated courses or downloaded sources. Follow each source's
+  licence, and never use or change the app to get around paywalls, logins or site terms.
+- **Your Claude account, your agreement.** Claude Code runs under your own agreement with Anthropic, and your
+  requests and submitted work are sent to Anthropic.
+- **Academic integrity.** If you're at a school or university, follow its rules on AI tools.
+- **Back up your data.** Everything lives on your computer, and nobody else can recover it.
+
 ## Install
 
 There's no published installer yet, so build it from source:
@@ -117,7 +133,7 @@ user's Claude Code settings, which keeps calls small and predictable.
 
 ## Licence
 
-MIT. See `LICENSE`, and `THIRD_PARTY.md` for the libraries the app uses.
+MIT. See `LICENSE`, `DISCLAIMER.md` for the terms of use, and `THIRD_PARTY.md` for the libraries the app uses.
 
 SelfSemester is an independent project. It isn't made by, affiliated with or endorsed by Anthropic. Claude and
 Claude Code are trademarks of Anthropic.

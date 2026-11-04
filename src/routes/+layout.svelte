@@ -10,6 +10,14 @@
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);
   let claudeProblem = $state<string | null>(null);
+  // First-launch terms notice: null while checking, false until accepted.
+  let noticeOk = $state<boolean | null>(null);
+  let agreed = $state(false);
+
+  async function acceptNotice() {
+    await api.acceptNotice();
+    noticeOk = true;
+  }
 
   const nav = [
     { href: "/", label: "Today" },
@@ -36,6 +44,7 @@
 
   onMount(() => {
     document.addEventListener("click", externalLinks);
+    api.noticeAccepted().then((ok) => (noticeOk = ok)).catch(() => (noticeOk = false));
     api.status().then((s) => (claudeProblem = s.claude.installed && s.claude.logged_in ? null : s.claude.problem)).catch(() => {});
     const stop = live(async () => {
       try {
@@ -51,7 +60,28 @@
   });
 </script>
 
-<div class="shell">
+{#if noticeOk === false}
+  <div class="notice-backdrop">
+    <div class="notice" role="dialog" aria-modal="true" aria-labelledby="notice-title">
+      <h1 id="notice-title">Before you start</h1>
+      <p class="muted">SelfSemester is free software, provided as is. Please read and accept these points.</p>
+      <ul>
+        <li><strong>No warranty or liability.</strong> You use it at your own risk. The authors aren't responsible for any loss, including wrong marks, lost data, or usage and charges on your Claude account.</li>
+        <li><strong>Not professional advice.</strong> Courses are AI-generated self-study material and can contain mistakes. For health, law, money, safety or any subject where an error could cause harm, check everything with a qualified professional.</li>
+        <li><strong>Not a qualification.</strong> Marks and transcripts aren't accredited and give no degree, credit or certification.</li>
+        <li><strong>Personal study only.</strong> Don't publish or sell generated courses or downloaded material. Follow each source's licence, and don't use the app to get around paywalls, logins or site terms.</li>
+        <li><strong>Your data goes to Anthropic.</strong> Course requests and the work you submit, including photos, are sent to Anthropic through your own Claude Code, under your own agreement with Anthropic. Don't submit other people's personal information.</li>
+        <li><strong>Academic integrity.</strong> If you're at a school or university, follow its rules on AI tools.</li>
+        <li><strong>Back up your data.</strong> Everything is stored only on this computer.</li>
+      </ul>
+      <p class="small muted">Full terms: DISCLAIMER.md at <a href="https://github.com/munitkala/selfsemester/blob/main/DISCLAIMER.md">github.com/munitkala/selfsemester</a>. SelfSemester isn't affiliated with or endorsed by Anthropic.</p>
+      <label class="agree"><input type="checkbox" bind:checked={agreed} /> I've read and accept these terms</label>
+      <button onclick={acceptNotice} disabled={!agreed}>Continue</button>
+    </div>
+  </div>
+{/if}
+
+<div class="shell" inert={noticeOk === false}>
   <aside>
     <div class="brand">SelfSemester</div>
     <nav aria-label="Main">
@@ -79,6 +109,41 @@
 </div>
 
 <style>
+  .notice-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    backdrop-filter: blur(3px);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+  .notice {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.75rem;
+    max-width: 40rem;
+    box-shadow: 0 10px 40px rgb(0 0 0 / 0.18);
+  }
+  .notice ul {
+    padding-left: 1.2rem;
+  }
+  .notice li {
+    margin: 0.45rem 0;
+  }
+  .agree {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-weight: 600;
+    margin: 1rem 0;
+  }
+  .agree input {
+    width: auto;
+  }
   .shell {
     display: grid;
     grid-template-columns: 13rem 1fr;

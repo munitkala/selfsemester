@@ -167,7 +167,11 @@ pub fn plan(subject: &str, notes: &str, answers: &Value, bundle_choice: Option<&
          - Readiness report: rough estimates of how well you can DELIVER this course (lesson accuracy, coverage by \
            free sources) and how accurately you can MARK it (per assessment type). Never 100%. Bands: Low, \
            Low–medium, Medium, Medium–high, High. Name weak spots plainly. basis = one sentence on where the \
-           numbers come from (they are starting estimates, not measurements)."
+           numbers come from (they are starting estimates, not measurements).\n\
+         - If mistakes in this subject could cause harm (health, medicine, law, money, electrical or mechanical \
+           work, chemistry, driving, flying, safety), make the FIRST weak spot say plainly that the course is \
+           general self-study, not professional advice or training, and that anything acted on must be checked \
+           with a qualified professional."
     );
     req(Tier::Opus, HOUSE_RULES, prompt, plan_schema(), &[])
 }

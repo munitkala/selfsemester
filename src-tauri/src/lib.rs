@@ -116,6 +116,21 @@ fn jobs_status(state: tauri::State<'_, AppState>) -> Res<course::JobSummary> {
     course::job_summary(&state.db.lock().unwrap(), None).map_err(err)
 }
 
+// ---------- terms notice ----------
+
+/// Bump when the first-launch notice changes, so everyone sees the new version once.
+const NOTICE_KEY: &str = "notice_v1_accepted_at";
+
+#[tauri::command]
+fn notice_accepted(state: tauri::State<'_, AppState>) -> Res<bool> {
+    Ok(db::get_setting(&state.db.lock().unwrap(), NOTICE_KEY).map_err(err)?.is_some())
+}
+
+#[tauri::command]
+fn accept_notice(state: tauri::State<'_, AppState>) -> Res<()> {
+    db::set_setting(&state.db.lock().unwrap(), NOTICE_KEY, &db::now_utc()).map_err(err)
+}
+
 // ---------- courses ----------
 
 #[tauri::command]
@@ -253,6 +268,8 @@ pub fn run() {
             app_status,
             run_test_stage,
             jobs_status,
+            notice_accepted,
+            accept_notice,
             list_courses,
             get_course,
             create_course,
