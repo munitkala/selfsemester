@@ -1,4 +1,4 @@
-name: Rust
+name: Build and test
 
 on:
   push:
@@ -11,12 +11,36 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    # SelfSemester is a Windows app (WebView2), so build and test it on Windows.
+    runs-on: windows-latest
 
     steps:
     - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install npm packages
+      run: npm ci
+
+    - name: Type-check the interface
+      run: npm run check
+
+    # Tauri embeds the built interface, so it has to exist before the Rust side compiles.
+    - name: Build the interface
+      run: npm run build
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
     - name: Build
-      run: cargo build --verbose
+      working-directory: src-tauri
+      run: cargo build --locked --verbose
+
+    # Tests that call the real Claude Code are marked #[ignore] and don't run here.
     - name: Run tests
-      run: cargo test --verbose
+      working-directory: src-tauri
+      run: cargo test --locked --verbose
