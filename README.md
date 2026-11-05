@@ -13,6 +13,21 @@ go on a transcript, and finished courses are archived to your Documents folder.
 
 > **Status: early (0.1.0).** It works end to end but has had little real-world use. Expect rough edges.
 
+## Screenshots
+
+Shown with a one-week "Git basics" course that Claude generated for a test run (example names in it are made up).
+
+| | |
+| --- | --- |
+| ![Readiness report and syllabus shown before you enrol](assets/screenshots/02-plan-review.png) | ![Building a course, with a progress bar and time left](assets/screenshots/03-building.png) |
+| **Plan review:** syllabus, pacing and honest accuracy estimates before anything is built | **Building:** each unit is written, then checked by a second model |
+| ![Today view](assets/screenshots/04-today.png) | ![Course page with units, deadlines and the current mark](assets/screenshots/05-course.png) |
+| **Today:** what's due, what's new, what's been marked | **Course:** units, deadlines, states and the running mark |
+| ![Lesson reader](assets/screenshots/06-lesson.png) | ![Assignment with points, deadline and weight](assets/screenshots/07-assignment.png) |
+| **Lesson:** full self-study lessons, with a distraction-free reading mode | **Assignment:** deadline, points and share of the final grade |
+| ![Quiz marked automatically](assets/screenshots/08-quiz-result.png) | ![First-launch terms](assets/screenshots/01-terms.png) |
+| **Quiz:** marked instantly, with the right answer explained for each miss | **First launch:** the terms every user accepts |
+
 ## Requirements
 
 | What | Details |
@@ -30,7 +45,9 @@ To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio
   which one you're using.
 - **Usage limits.** Building a course is heavy work: roughly one call per stage plus two per unit, with each unit
   taking a few minutes. A long course can use a large share of your plan's limits. When a limit is reached, the
-  app pauses and carries on by itself once the limit resets.
+  app pauses and tries again at the reset time Claude Code reports (or at least every hour). If your limit has
+  reset sooner, press **Resume now**. A progress bar shows roughly how long building or marking has left, based on
+  how long each step has taken before on your computer.
 - **Keep the app open while a course is building.** Building, releases, deadline checks and reminders only run while
   the window is open. Anything that fell due while it was closed is settled the next time you open it.
 - **AI teaching and marking can be wrong.** Before you enrol, each course shows a readiness report with honest
@@ -103,6 +120,15 @@ cargo test                 # unit tests, including a simulated course from intak
 Two tests call the real Claude Code and use plan usage, so they're skipped unless asked for:
 `cargo test -- --ignored live_haiku` (one tiny call) and
 `cargo test --lib -- --ignored live_compile --nocapture` (every build stage on a one-week course, about five minutes).
+
+Two environment variables help when testing without touching real courses:
+
+| Variable | Effect |
+| --- | --- |
+| `SELFSEMESTER_HOME=<folder>` | Keep all data (database, courses, archives) under that folder instead of AppData and Documents |
+| `SELFSEMESTER_NO_CLAUDE=1` | Never start Claude jobs; queued work just waits (useful for demos and UI work) |
+
+The screenshots come from demo data made by the `seed_demo` test (see its comment in `course/pipeline.rs`).
 
 ### How it fits together
 

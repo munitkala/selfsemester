@@ -82,8 +82,44 @@ pub fn limit_from_text(text: &str) -> Option<RunError> {
         .nth(1)
         .and_then(|s| s.trim().split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|d| d.parse::<i64>().ok())
-        .and_then(|secs| Utc.timestamp_opt(secs, 0).single());
+        .and_then(|secs| Utc.timestamp_opt(secs, 0).single())
+        .or_else(|| reset_clock_time(text, chrono::Local::now()));
     Some(RunError::UsageLimited { retry_at, message: snippet(text) })
+}
+
+/// Read a reset time written as a clock time, e.g. "resets 3pm", "resets at 3:30 PM", "resets 15:00".
+/// Taken as local time, at its next occurrence after `now`.
+pub fn reset_clock_time(text: &str, now: DateTime<chrono::Local>) -> Option<DateTime<Utc>> {
+    let lower = text.to_lowercase();
+    let rest = &lower[lower.find("reset")?..];
+    let rest = rest.trim_start_matches(|c: char| c.is_alphabetic()).trim_start();
+    let rest = rest.strip_prefix("at ").unwrap_or(rest);
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let mut hour: u32 = digits.parse().ok()?;
+    let mut after = &rest[digits.len()..];
+    let mut minute = 0;
+    if let Some(m) = after.strip_prefix(':') {
+        let md: String = m.chars().take_while(|c| c.is_ascii_digit()).collect();
+        minute = md.parse().ok()?;
+        after = &m[md.len()..];
+    }
+    let after = after.trim_start();
+    if after.starts_with("pm") || after.starts_with("p.m") {
+        if hour < 12 {
+            hour += 12;
+        }
+    } else if (after.starts_with("am") || after.starts_with("a.m")) && hour == 12 {
+        hour = 0;
+    }
+    if hour > 23 || minute > 59 {
+        return None;
+    }
+    let today = now.date_naive().and_hms_opt(hour, minute, 0)?;
+    let mut at = chrono::Local.from_local_datetime(&today).earliest()?;
+    if at <= now {
+        at += chrono::Duration::days(1);
+    }
+    Some(at.with_timezone(&Utc))
 }
 
 fn mentions_login(text: &str) -> bool {
@@ -106,12 +142,18 @@ fn snippet(s: &str) -> String {
     if s.chars().count() > 400 { format!("{}…", s.chars().take(400).collect::<String>()) } else { s.to_string() }
 }
 
-/// When to try a usage-limited job again: just after the reported reset, or an increasing back-off.
+/// When to try a usage-limited job again: just after the reported reset, or a back-off that never waits more
+/// than an hour (a call refused for the limit costs no usage, so checking hourly is cheap).
 pub fn next_attempt(retry_at: Option<DateTime<Utc>>, attempts: u32, now: DateTime<Utc>) -> DateTime<Utc> {
     match retry_at {
         Some(t) if t > now => t + chrono::Duration::minutes(1),
         _ => {
-            let mins = 15i64 * 2i64.pow(attempts.saturating_sub(1).min(4)); // 15, 30, 60, 120, 240
+            let mins = match attempts {
+                0 | 1 => 10,
+                2 => 20,
+                3 => 30,
+                _ => 60,
+            };
             now + chrono::Duration::minutes(mins)
         }
     }
@@ -156,6 +198,8 @@ mod tests {
     #[test]
     fn detects_limit_plain_text_and_429() {
         let s = r#"{"type":"result","is_error":true,"result":"You've hit your limit · resets 3pm"}"#;
+        assert!(matches!(parse_envelope(s, "", "opus"), Err(RunError::UsageLimited { retry_at: Some(_), .. })));
+        let s = r#"{"type":"result","is_error":true,"result":"Usage limit reached"}"#;
         assert!(matches!(parse_envelope(s, "", "opus"), Err(RunError::UsageLimited { retry_at: None, .. })));
         let s = r#"{"type":"result","is_error":true,"api_error_status":429,"result":"Too many requests"}"#;
         assert!(matches!(parse_envelope(s, "", "opus"), Err(RunError::UsageLimited { .. })));
@@ -175,10 +219,28 @@ mod tests {
     #[test]
     fn backoff() {
         let now = Utc.timestamp_opt(1_000_000, 0).unwrap();
-        assert_eq!(next_attempt(None, 1, now) - now, chrono::Duration::minutes(15));
-        assert_eq!(next_attempt(None, 3, now) - now, chrono::Duration::minutes(60));
-        assert_eq!(next_attempt(None, 99, now) - now, chrono::Duration::minutes(240));
+        assert_eq!(next_attempt(None, 1, now) - now, chrono::Duration::minutes(10));
+        assert_eq!(next_attempt(None, 3, now) - now, chrono::Duration::minutes(30));
+        assert_eq!(next_attempt(None, 99, now) - now, chrono::Duration::minutes(60));
         let reset = now + chrono::Duration::hours(2);
         assert_eq!(next_attempt(Some(reset), 1, now), reset + chrono::Duration::minutes(1));
+    }
+
+    #[test]
+    fn reads_clock_reset_times() {
+        use chrono::{Local, Timelike};
+        let now = Local.with_ymd_and_hms(2026, 11, 4, 13, 0, 0).unwrap();
+        let at = |s: &str| reset_clock_time(s, now).map(|t| t.with_timezone(&Local));
+        let t = at("You've hit your 5-hour limit · resets 6:40pm (America/Toronto)").unwrap();
+        assert_eq!((t.hour(), t.minute(), t.date_naive()), (18, 40, now.date_naive()));
+        let t = at("Limit reached, resets at 3 PM").unwrap();
+        assert_eq!(t.hour(), 15);
+        // A time already past today means tomorrow.
+        let t = at("resets 9am").unwrap();
+        assert_eq!((t.hour(), t.date_naive()), (9, now.date_naive().succ_opt().unwrap()));
+        assert_eq!(at("resets 12am").unwrap().hour(), 0);
+        assert_eq!(at("resets 15:30").unwrap().minute(), 30);
+        assert!(at("usage limit reached").is_none());
+        assert!(at("resets soon").is_none());
     }
 }

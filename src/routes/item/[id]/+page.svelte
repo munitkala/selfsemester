@@ -3,6 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { api, live, type ItemView } from "$lib/api";
   import { render } from "$lib/markdown";
+  import ProgressBar from "$lib/Progress.svelte";
   import { kindLabel, stateLabel, when, relative, pct } from "$lib/format";
 
   const id = $derived(page.params.id ?? "");
@@ -127,6 +128,14 @@
                 {:else}
                   <input type="text" inputmode="decimal" placeholder="Your answer" bind:value={answers[q.id]} aria-label="Answer to {q.id}" class="num" />
                 {/if}
+              {:else if q.type === "mcq" && q.options.length}
+                <ul class="given">
+                  {#each q.options as o}
+                    <li class:chosen={v.submission?.answers?.[q.id] === o}>{@html render(o)}{#if v.submission?.answers?.[q.id] === o} <span class="small muted">(your answer)</span>{/if}</li>
+                  {/each}
+                </ul>
+              {:else if q.type === "numeric" && v.submission?.answers?.[q.id]}
+                <p class="small">Your answer: <strong>{v.submission.answers[q.id]}</strong></p>
               {/if}
             </li>
           {/each}
@@ -190,9 +199,12 @@
       <section class="card">
         <h2>Submitted {when(v.submission.submitted_at)}</h2>
         {#if markingState[0] === "waiting_usage"}
-          <p class="warn">Waiting for your Claude usage limit to reset (around {when(markingState[1])}). It will be marked then; your submission time is already recorded.</p>
+          <p class="warn">Marking is paused until your Claude usage limit resets. Next try {when(markingState[1])}; your submission time is already recorded.</p>
+          <button onclick={() => api.resume(v!.item.course_id)}>Resume marking now</button>
         {:else if markingState[0] === "failed"}
           <p class="bad">Marking failed: {markingState.slice(1).join(" ")}. Open the course page to retry.</p>
+        {:else if v.marking_progress}
+          <ProgressBar p={v.marking_progress} />
         {:else}
           <p class="muted"><span class="spinner" aria-hidden="true"></span> Waiting for marking…</p>
         {/if}
@@ -296,6 +308,15 @@
   }
   .num {
     max-width: 14rem;
+  }
+  .given {
+    margin: 0.3rem 0 0;
+    padding-left: 1.2rem;
+    color: var(--muted);
+  }
+  .given li.chosen {
+    color: var(--text);
+    font-weight: 600;
   }
   .preview {
     border: 1px solid var(--line);

@@ -401,6 +401,80 @@ mod tests {
         assert_eq!(on_transcript, 1);
     }
 
+    /// Builds demo data for README screenshots from saved stage outputs (1-intake.json, 2-plan.json,
+    /// 3-sources.json, 4-unit.json, as written by `live_compile_stages`). Makes two separate homes for
+    /// `SELFSEMESTER_HOME`: `<out>/review` (a plan waiting for approval) and `<out>/active` (a running course).
+    /// `SS_DEMO_DATA=<stage outputs> SS_DEMO_OUT=<dir> cargo test --lib -- --ignored seed_demo`
+    #[test]
+    #[ignore]
+    fn seed_demo() {
+        let data = std::path::PathBuf::from(std::env::var("SS_DEMO_DATA").expect("SS_DEMO_DATA"));
+        let out = std::path::PathBuf::from(std::env::var("SS_DEMO_OUT").expect("SS_DEMO_OUT"));
+        let load = |f: &str| -> Value { serde_json::from_str(&std::fs::read_to_string(data.join(f)).unwrap()).unwrap() };
+        let (intake, plan, sources, unit) = (load("1-intake.json"), load("2-plan.json"), load("3-sources.json"), load("4-unit.json"));
+        let answers = json!({"goal":"Use Git for my own personal projects","level":"Never used either","hours_per_week":"3",
+            "finish_date":"2026-11-12","equipment":"Windows","git_installed":"Git is installed","online_offline":"Mostly online",
+            "remote_hosting":"Willing to create one"});
+
+        let home = |name: &str| {
+            let h = out.join(name);
+            let _ = std::fs::remove_dir_all(&h);
+            let paths = AppPaths::rooted(&h.join("AppData"), &h.join("Documents"));
+            paths.ensure().unwrap();
+            let conn = db::open(&paths.db_file()).unwrap();
+            let sealer = Sealer::load(&conn).unwrap();
+            (paths, conn, sealer)
+        };
+
+        // 1. A plan waiting for review: shows the readiness report.
+        let (paths, conn, sealer) = home("review");
+        let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
+        answer(&conn, &paths, &sealer, intake.clone());
+        answer_intake(&conn, &id, &answers).unwrap();
+        answer(&conn, &paths, &sealer, plan.clone());
+        drop(conn);
+
+        // 2. A course part way through building (first unit written, waiting to be checked). Run the app with
+        //    SELFSEMESTER_NO_CLAUDE=1 so it stays there.
+        let (paths, conn, sealer) = home("building");
+        let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
+        answer(&conn, &paths, &sealer, intake.clone());
+        answer_intake(&conn, &id, &answers).unwrap();
+        answer(&conn, &paths, &sealer, plan.clone());
+        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, true).unwrap();
+        answer(&conn, &paths, &sealer, sources.clone());
+        answer(&conn, &paths, &sealer, unit.clone());
+        drop(conn);
+
+        // 3. A running course built from the first unit, with the quiz already taken.
+        let (paths, conn, sealer) = home("active");
+        let mut one_unit = plan.clone();
+        one_unit["units"] = json!([plan["units"][0].clone()]);
+        let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
+        answer(&conn, &paths, &sealer, intake);
+        answer_intake(&conn, &id, &answers).unwrap();
+        answer(&conn, &paths, &sealer, one_unit);
+        let start = (Utc::now() - Duration::days(1)).date_naive();
+        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, true).unwrap();
+        answer(&conn, &paths, &sealer, sources);
+        answer(&conn, &paths, &sealer, unit.clone());
+        answer(&conn, &paths, &sealer, json!({"ok": true, "issues": [{"item_key":"u01-assign","question_id":"a2",
+            "problem":"Rubric points for the setup steps could be split more clearly.","severity":"minor"}]}));
+        tick(&conn, Utc::now()).unwrap();
+        // Take the quiz: right answers for the first seven questions, wrong for the rest.
+        let quiz = unit["items"].as_array().unwrap().iter().find(|i| i["module"] == "quiz").unwrap();
+        let mut given = serde_json::Map::new();
+        for (n, k) in quiz["answer_key"].as_array().unwrap().iter().enumerate() {
+            let a = if n < 7 { k["answer"].as_str().unwrap().to_string() } else { "0".into() };
+            given.insert(k["question_id"].as_str().unwrap().into(), json!(a));
+        }
+        let quiz_id: String = conn
+            .query_row("SELECT id FROM items WHERE course_id=?1 AND module='quiz'", [&id], |r| r.get(0))
+            .unwrap();
+        marking::submit(&conn, &paths, &sealer, &quiz_id, "", &Value::Object(given), &[], Utc::now()).unwrap();
+        println!("demo homes in {}", out.display());
+    }
+
     #[test]
     fn bundle_choice_replans() {
         let conn = db::open_in_memory().unwrap();

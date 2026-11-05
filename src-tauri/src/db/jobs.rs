@@ -100,6 +100,16 @@ pub fn claim_next(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Opt
     Ok(row.map(|(id, body)| (id, serde_json::from_str(&body).expect("stored request is valid"))))
 }
 
+/// Make jobs paused by a usage limit runnable now (all of them, or one course's). Returns how many.
+/// If the limit is still in force they simply pause again; a refused call uses no usage.
+pub fn resume_waiting(conn: &Connection, course_id: Option<&str>, now: DateTime<Utc>) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE jobs SET next_attempt_at = ?1, updated_at = ?1
+         WHERE status = 'waiting_usage' AND (?2 IS NULL OR course_id = ?2)",
+        params![ts(now), course_id],
+    )
+}
+
 /// Jobs left 'running' by a crash go back in the queue at launch.
 pub fn requeue_interrupted(conn: &Connection) -> rusqlite::Result<usize> {
     conn.execute("UPDATE jobs SET status = 'queued', updated_at = ?1 WHERE status = 'running'", [super::now_utc()])
@@ -257,6 +267,22 @@ mod tests {
             let want = if i < MAX_FAILURES { "queued" } else { "failed" };
             assert_eq!(get(&conn, b).unwrap().unwrap().status, want);
         }
+    }
+
+    #[test]
+    fn resume_makes_waiting_jobs_runnable() {
+        let conn = crate::db::open_in_memory().unwrap();
+        let course = crate::course::pipeline::create(&conn, "Test", "").unwrap();
+        claim_next(&conn, Utc::now()).unwrap().unwrap(); // the intake job create() queued
+        let id = enqueue(&conn, Some(&course), "unit", &req()).unwrap();
+        let t0 = Utc::now();
+        claim_next(&conn, t0).unwrap().unwrap();
+        let limited: Result<StageOutput, RunError> = Err(RunError::UsageLimited { retry_at: None, message: "limit".into() });
+        finish(&conn, id, "haiku", &limited, t0).unwrap();
+        assert!(claim_next(&conn, t0).unwrap().is_none());
+        assert_eq!(resume_waiting(&conn, Some("other"), t0).unwrap(), 0);
+        assert_eq!(resume_waiting(&conn, Some(&course), t0).unwrap(), 1);
+        assert_eq!(claim_next(&conn, t0).unwrap().unwrap().0, id);
     }
 
     #[test]

@@ -92,9 +92,12 @@
     <div class="activity" aria-live="polite">
       {#if jobs && (jobs.running || jobs.queued)}
         <span class="spinner" aria-hidden="true"></span>
-        <span>Claude is {stageLabel[jobs.running_kind ?? ""] ?? "working"}{jobs.queued ? ` · ${jobs.queued} queued` : ""}</span>
+        <span>{jobs.running ? `Claude is ${stageLabel[jobs.running_kind ?? ""] ?? "working"}` : "Steps waiting to start"}{jobs.queued ? ` · ${jobs.queued} queued` : ""}</span>
       {:else if jobs?.waiting_usage}
-        <span class="warn">Usage limit reached. Resumes {when(jobs.next_attempt_at)}.</span>
+        <div>
+          <span class="warn">Paused: usage limit reached. Next try {when(jobs.next_attempt_at)}.</span>
+          <button class="ghost resume" onclick={() => api.resume()}>Resume now</button>
+        </div>
       {:else}
         <span class="muted">Claude is idle</span>
       {/if}
@@ -184,6 +187,11 @@
     background: var(--panel);
     font-weight: 600;
     box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .resume {
+    margin-top: 0.4rem;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.82rem;
   }
   .activity {
     margin-top: auto;

@@ -11,6 +11,8 @@ export type JobSummary = {
   running_kind: string | null;
 };
 
+export type Progress = { stage: string; total_secs: number; remaining_secs: number; as_of: string; paused: boolean };
+
 export type ClaudeStatus = {
   installed: boolean;
   path: string | null;
@@ -98,6 +100,7 @@ export type CourseView = {
   units: { key: string; title: string; week: number; state: string; warnings: string[] | null; items: ItemRow[] }[];
   sources: { url: string; title: string | null; licence: string | null; attribution: string | null; free: boolean }[];
   archive_dir: string | null;
+  progress: Progress | null;
 };
 
 export type Question = { id: string; prompt: string; type: "mcq" | "numeric" | "short" | "long"; options: string[]; points: number };
@@ -128,6 +131,7 @@ export type ItemView = {
   } | null;
   answer_key: { question_id: string; answer: string; explanation: string }[] | null;
   marking_status: string | null;
+  marking_progress: Progress | null;
 };
 
 export type Today = {
@@ -149,6 +153,7 @@ export type Transcript = {
 export const api = {
   status: () => invoke<AppStatus>("app_status"),
   jobs: () => invoke<JobSummary>("jobs_status"),
+  resume: (courseId?: string) => invoke<number>("resume_now", { courseId: courseId ?? null }),
   noticeAccepted: () => invoke<boolean>("notice_accepted"),
   acceptNotice: () => invoke<void>("accept_notice"),
   test: () => invoke<{ job: { status: string; error: string | null; next_attempt_at: string | null }; result: { ok: boolean; message: string } | null }>("run_test_stage"),

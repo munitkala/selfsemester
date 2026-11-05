@@ -2,6 +2,7 @@
 
 pub mod marking;
 pub mod pipeline;
+pub mod progress;
 pub mod prompts;
 pub mod schedule;
 pub mod seal;
@@ -184,6 +185,7 @@ pub struct CourseView {
     pub units: Vec<UnitView>,
     pub sources: Vec<Value>,
     pub archive_dir: Option<String>,
+    pub progress: Option<progress::Progress>,
 }
 
 pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView, String> {
@@ -215,6 +217,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     units: vec![],
                     sources: vec![],
                     archive_dir: None,
+                    progress: None,
                 })
             },
         )
@@ -223,6 +226,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
         .ok_or("No such course.")?;
     v.grades = marking::grades(conn, id).map_err(io)?;
     v.jobs = job_summary(conn, Some(id)).map_err(io)?;
+    v.progress = progress::course(conn, id, chrono::Utc::now()).map_err(io)?;
 
     let mut st = conn.prepare("SELECT id, unit_key, title, week, state, warnings FROM units WHERE course_id=?1 ORDER BY seq").map_err(io)?;
     let units: Vec<(String, String, String, i64, String, Option<String>)> = st
@@ -302,6 +306,7 @@ pub struct ItemView {
     /// Shown only after the item is marked.
     pub answer_key: Option<Value>,
     pub marking_status: Option<String>,
+    pub marking_progress: Option<progress::Progress>,
 }
 
 pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> Result<ItemView, String> {
@@ -364,7 +369,22 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         }
         _ => None,
     };
-    Ok(ItemView { item: row, points, late_policy: json_col(Some(policy)), lesson, content, submission, mark, answer_key, marking_status })
+    let marking_progress = match (&submission, row.state.as_str()) {
+        (Some(s), "submitted") => progress::marking(conn, s["id"].as_str().unwrap_or_default(), chrono::Utc::now()).map_err(io)?,
+        _ => None,
+    };
+    Ok(ItemView {
+        item: row,
+        points,
+        late_policy: json_col(Some(policy)),
+        lesson,
+        content,
+        submission,
+        mark,
+        answer_key,
+        marking_status,
+        marking_progress,
+    })
 }
 
 #[derive(Debug, Serialize)]

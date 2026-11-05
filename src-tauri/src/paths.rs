@@ -17,8 +17,13 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    /// Standard Windows locations.
+    /// Standard Windows locations, or everything under `SELFSEMESTER_HOME` when that's set (for a separate test or
+    /// demo copy that mustn't touch real courses).
     pub fn standard() -> io::Result<Self> {
+        if let Some(home) = std::env::var_os("SELFSEMESTER_HOME").filter(|h| !h.is_empty()) {
+            let home = Path::new(&home);
+            return Ok(Self::rooted(&home.join("AppData"), &home.join("Documents")));
+        }
         let local = dirs::data_local_dir()
             .ok_or_else(|| io::Error::other("could not find the local app data folder"))?;
         let docs = dirs::document_dir()

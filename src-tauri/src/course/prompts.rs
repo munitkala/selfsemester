@@ -46,6 +46,8 @@ stand on its own. Rules: prefer free and openly licensed sources (OpenStax, MIT 
 official documentation); only mention paid or copyrighted material when nothing free covers a topic, and mark it \
 \"get this yourself\"; never suggest bypassing paywalls. Explain in your own words, with short quotes at most. Use \
 Markdown, and LaTeX for maths ($inline$, $$display$$). Be accurate; when unsure, say so rather than guess. \
+In examples use made-up names, usernames, emails and folder paths (such as Alex or C:\\Users\\alex), never the \
+learner's real name, username, email or anything else about this computer. \
 Answer only with JSON matching the given schema.";
 
 /// The app can currently capture these kinds of work.

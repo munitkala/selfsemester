@@ -116,6 +116,14 @@ fn jobs_status(state: tauri::State<'_, AppState>) -> Res<course::JobSummary> {
     course::job_summary(&state.db.lock().unwrap(), None).map_err(err)
 }
 
+/// Try paused work again now instead of waiting for the scheduled retry (all courses, or one).
+#[tauri::command]
+fn resume_now(app: AppHandle, state: tauri::State<'_, AppState>, course_id: Option<String>) -> Res<usize> {
+    let n = db::jobs::resume_waiting(&state.db.lock().unwrap(), course_id.as_deref(), chrono::Utc::now()).map_err(err)?;
+    changed(&app);
+    Ok(n)
+}
+
 // ---------- terms notice ----------
 
 /// Bump when the first-launch notice changes, so everyone sees the new version once.
@@ -268,6 +276,7 @@ pub fn run() {
             app_status,
             run_test_stage,
             jobs_status,
+            resume_now,
             notice_accepted,
             accept_notice,
             list_courses,

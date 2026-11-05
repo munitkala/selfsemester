@@ -8,7 +8,8 @@
     if (i.state === "locked") return `Opens ${when(i.release_at)}`;
     if (!i.due_at) return i.state === "done" ? "Read" : `Released ${when(i.release_at)}`;
     if (i.state === "open") return `Due ${when(i.due_at)} (${relative(i.due_at)})`;
-    return `Was due ${when(i.due_at)}`;
+    const past = new Date(i.due_at).getTime() < Date.now();
+    return `${past ? "Was due" : "Due"} ${when(i.due_at)}`;
   }
 </script>
 

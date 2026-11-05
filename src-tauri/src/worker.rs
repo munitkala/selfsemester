@@ -99,13 +99,15 @@ impl Worker {
         std::thread::Builder::new()
             .name("selfsemester-worker".into())
             .spawn(move || {
+                // SELFSEMESTER_NO_CLAUDE=1 keeps queued jobs waiting (for a demo or test copy of the app).
+                let run_jobs = std::env::var("SELFSEMESTER_NO_CLAUDE").map_or(true, |v| v.is_empty() || v == "0");
                 let mut last_tick = Instant::now() - TICK_EVERY;
                 loop {
                     if last_tick.elapsed() >= TICK_EVERY {
                         self.tick(shell.as_ref());
                         last_tick = Instant::now();
                     }
-                    if !self.step(shell.as_ref()) {
+                    if !run_jobs || !self.step(shell.as_ref()) {
                         std::thread::sleep(IDLE_SLEEP);
                     }
                 }

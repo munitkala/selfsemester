@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import { api, live, type CourseView, type LatePolicy } from "$lib/api";
   import ItemList from "$lib/ItemList.svelte";
+  import ProgressBar from "$lib/Progress.svelte";
   import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "$lib/format";
 
   const id = $derived(page.params.id ?? "");
@@ -103,9 +104,15 @@
   {/if}
 
   {#if c.jobs.waiting_usage}
-    <p class="note">Your Claude plan's usage limit was reached. Work resumes automatically around {when(c.jobs.next_attempt_at)}.</p>
+    <div class="note row">
+      <span>Paused because your Claude plan's usage limit was reached. It tries again automatically at {when(c.jobs.next_attempt_at)}. If your limit has already reset, resume now.</span>
+      <button onclick={() => act(() => api.resume(id))} disabled={busy}>Resume now</button>
+    </div>
   {:else if working}
-    <p class="note info"><span class="spinner" aria-hidden="true"></span> Claude is {stageLabel[c.jobs.running_kind ?? ""] ?? "queued"}… You can leave this page; it carries on in the background.</p>
+    <p class="note info"><span class="spinner" aria-hidden="true"></span> {c.jobs.running_kind ? `Claude is ${stageLabel[c.jobs.running_kind] ?? "working"}…` : "Waiting for the next step to start…"} You can leave this page; it carries on in the background.</p>
+  {/if}
+  {#if c.progress}
+    <ProgressBar p={c.progress} />
   {/if}
 
   <!-- 1. Intake -->
@@ -157,7 +164,7 @@
       <h2>{plan.title}</h2>
       <p>{plan.summary}</p>
       <p class="small muted">
-        {plan.pacing.total_weeks} weeks · about {plan.pacing.hours_per_week} hours a week · {plan.units.length} units
+        {plan.pacing.total_weeks} {plan.pacing.total_weeks === 1 ? "week" : "weeks"} · about {plan.pacing.hours_per_week} hours a week · {plan.units.length} units
       </p>
       {#if !plan.pacing.fits_user_hours}<p class="note">{plan.pacing.note || "Your hours per week may not fit this syllabus."}</p>{:else if plan.pacing.note}<p class="small muted">{plan.pacing.note}</p>{/if}
       {#if plan.dependencies.length}
@@ -165,7 +172,7 @@
         <ul>{#each plan.dependencies as d}<li>{d}</li>{/each}</ul>
       {/if}
       {#if plan.unsupported_inputs.length}
-        <p class="note">This version leaves out work the app can't capture yet: {plan.unsupported_inputs.join(", ")}.</p>
+        <p class="note">This version leaves out work the app can't capture yet: {plan.unsupported_inputs.map((s) => s.replace(/[.\s]+$/, "")).join("; ")}.</p>
       {/if}
     </section>
 
