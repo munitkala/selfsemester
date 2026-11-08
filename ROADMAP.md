@@ -1,6 +1,6 @@
 ## Roadmap
 
-- [ ] **Mid-November 2026**: File uploading support (upload reference files, images, and notes directly to courses)
+- [x] **Mid-November 2026**: File uploading support (upload reference files, images, and notes directly to courses)
 - [ ] **Late November 2026**: Course curriculum strictness modes & assessment engine
   - Flexible learning modes: **Sandbox Mode** (unlimited resubmissions, no late penalties) vs. **Structured Mode** (strict evaluation, single attempt per assessment)
   - Immediate submission grading & rubric-based feedback upon finishing assignments or assessments
