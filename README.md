@@ -74,7 +74,8 @@ Shown with a one-week "Git basics" course that Claude generated for a test run (
 | [Claude Code](https://claude.com/claude-code) | Installed and signed in **with a Claude subscription** (Pro or Max). SelfSemester runs your own copy of Claude Code; there's no API key to enter. |
 | Internet | Needed while a course is being built and whenever work is marked. Reading lessons and doing work happen offline. |
 
-To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio C++ build tools (see below).
+To build from source instead of downloading the installer, you also need Node.js 20+, Rust 1.85+ and the Visual
+Studio C++ build tools (see [Install](#install)).
 
 ## Before you use it
 
@@ -147,7 +148,26 @@ first time it opens. In short:
 
 ## Install
 
-There's no published installer yet, so build it from source:
+### Download the installer (easiest)
+
+1. Go to the [latest release](https://github.com/munitkala/selfsemester/releases/latest) and download
+   `SelfSemester_<version>_x64-setup.exe` under **Assets**.
+2. Run it. It installs for your Windows account only, so it doesn't need administrator rights.
+3. The installer isn't code-signed, so Windows SmartScreen warns about an unknown publisher. Choose
+   **More info → Run anyway**. To check the download first, run `Get-FileHash .\SelfSemester_<version>_x64-setup.exe`
+   in PowerShell and compare it with the `.sha256` file next to the installer on the release page.
+4. Open SelfSemester from the Start menu.
+
+The installers are built by GitHub Actions straight from the tagged source code (see
+`.github/workflows/release.yml`), not on anyone's own computer.
+
+To update, download the newer installer and run it: your courses and settings are kept. To uninstall, use
+**Settings → Apps → Installed apps** in Windows. Your data in `%LOCALAPPDATA%\SelfSemester` and
+`Documents\SelfSemester` stays until you delete it yourself.
+
+### Or build it yourself
+
+You need Node.js 20+, Rust 1.85+ and the Visual Studio C++ build tools.
 
 ```powershell
 git clone https://github.com/munitkala/selfsemester.git
@@ -156,11 +176,13 @@ npm install
 npm run tauri build -- --bundles nsis
 ```
 
-The installer is written to `src-tauri\target\release\bundle\nsis\`. It isn't code-signed, so Windows SmartScreen
-will warn about an unknown publisher (choose **More info → Run anyway**).
+The installer is written to `src-tauri\target\release\bundle\nsis\`. Run it the same way as above.
 
-Then make sure Claude Code is signed in: open a terminal, run `claude`, and sign in with your Claude account. In
-SelfSemester, open **Settings** and press **Run test**.
+### Then connect Claude Code
+
+Courses you write yourself in the course builder work without this. For courses Claude writes and marks, install
+[Claude Code](https://claude.com/claude-code), open a terminal, run `claude` and sign in with your Claude account.
+Then in SelfSemester open **Settings** and press **Run test**.
 
 ## Development
 

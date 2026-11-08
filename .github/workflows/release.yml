@@ -1,0 +1,67 @@
+name: Release installer
+
+# Builds the Windows installer on a clean GitHub machine and attaches it to the release, with a SHA-256 checksum.
+# Runs for every version tag (v1.2.3), or by hand for an existing tag.
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        ref: ${{ env.TAG }}
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install npm packages
+      run: npm ci
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
+    - name: Build the installer
+      run: npm run tauri build -- --bundles nsis
+
+    - name: Checksum
+      shell: pwsh
+      run: |
+        $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+        $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+        "$hash  $($exe.Name)" | Out-File -Encoding ascii "$($exe.FullName).sha256"
+        "INSTALLER=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+        Write-Output "$hash  $($exe.Name)"
+
+    - name: Make sure the release exists
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release view $env:TAG *> $null
+        if ($LASTEXITCODE -ne 0) { gh release create $env:TAG --title "SelfSemester $($env:TAG.TrimStart('v'))" --notes "See CHANGELOG.md." }
+        exit 0
+
+    - name: Attach to the release
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release upload $env:TAG "$env:INSTALLER" "$env:INSTALLER.sha256" --clobber

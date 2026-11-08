@@ -5,7 +5,9 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-Nothing yet.
+- Each release now has a ready-made Windows installer to download, built by GitHub Actions from the tagged source
+  (`.github/workflows/release.yml`), with a SHA-256 checksum next to it. The README explains downloading it as well
+  as building it yourself.
 
 ## 0.3.0 (2026-11-08)
 
