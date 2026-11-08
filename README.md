@@ -11,7 +11,10 @@ that the app runs the course on its own: it releases material day by day, enforc
 and sends written work and photos of handwritten working back to Claude for marking against a rubric. Final marks
 go on a transcript, and finished courses are archived to your Documents folder.
 
-> **Status: early (0.1.0).** It works end to end but has had little real-world use. Expect rough edges.
+You can also write a course yourself in the **course builder**, with no Claude at all, and run it on the same
+schedule. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+
+> **Status: early (0.2.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 ## Screenshots
 
@@ -65,11 +68,20 @@ To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio
 - **Your own materials:** each course page has a "Your materials" section where you can add reference files (PDFs,
   text, notes, code), images and typed notes. Claude reads them when it plans the course, writes each unit and marks
   your work, so add them before you approve a course if you want every unit to use them.
+- **Structured or Sandbox:** chosen when you enrol. Structured gives one attempt per assessment and applies the late
+  policy. Sandbox lets you resubmit as often as you like with no late penalties, and keeps the answer key hidden
+  until you choose to see it (which closes that item). Sandbox courses are marked as such on the transcript.
+- **Instant feedback and review:** multiple-choice and numeric answers are checked the moment you submit, while
+  Claude marks the rest. Every marked item has a **Review with Claude** thread to go over the questions, feedback
+  and mark in depth; Claude can explain a mark but not change it.
+- **Course builder:** write the syllabus, lessons, questions, answer keys and rubrics yourself. Multiple-choice and
+  numeric questions are marked by the app and you mark written answers against your own key, so these courses
+  never call Claude. A draft can be exported to a plain folder, edited in any text editor and imported back.
 
 ## Privacy
 
 Everything stays on your computer. The app has no server and no account system. The only thing that talks to the
-internet is your Claude Code, which sends course prompts, your course materials and your submitted work to Anthropic
+internet is your Claude Code, which sends course prompts, your course materials, your submitted work and review questions to Anthropic
 to generate and mark courses, under your agreement with Anthropic. SelfSemester never reads, stores or sends your Claude sign-in.
 
 | Folder | Contents |
@@ -136,15 +148,17 @@ The screenshots come from demo data made by the `seed_demo` test (see its commen
 ### How it fits together
 
 ```
-src/                      SvelteKit interface (Today, Courses, New course, course and item pages, Transcript, Settings)
+src/                      SvelteKit interface (Today, Courses, New course, Course builder, course and item pages, Transcript, Settings)
 src-tauri/src/
   claude/                 runs `claude -p` with a JSON schema, reads the result, spots usage limits
   course/
     prompts.rs            the prompt and JSON schema for each stage
     pipeline.rs           intake -> plan -> sources -> units -> check -> schedule
-    schedule.rs           release dates, deadlines, late policy
-    marking.rs            submissions, auto-marking, grades, transcript, archive
+    schedule.rs           release dates, deadlines, late policy, Structured and Sandbox rules
+    marking.rs            submissions, auto-marking, instant feedback, self-marking, grades, transcript, archive
     materials.rs          your own reference files, images and notes for a course
+    review.rs             review mode: talking a marked item through with Claude
+    builder.rs            the course builder: drafts, publishing, folder export and import
     seal.rs               encrypted answer keys and exams
   db/                     SQLite schema, migrations, job queue
   worker.rs               background thread: runs one Claude job at a time and ticks the clock
