@@ -30,6 +30,11 @@ fn configure(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// The schema version this build upgrades databases to.
+pub fn latest_schema() -> u32 {
+    MIGRATIONS.len() as u32
+}
+
 pub fn schema_version(conn: &Connection) -> rusqlite::Result<u32> {
     conn.pragma_query_value(None, "user_version", |r| r.get(0))
 }

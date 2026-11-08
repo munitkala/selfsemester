@@ -10,6 +10,7 @@
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);
   let claudeProblem = $state<string | null>(null);
+  let restored = $state<string | null>(null);
   // First-launch terms notice: null while checking, false until accepted.
   let noticeOk = $state<boolean | null>(null);
   let agreed = $state(false);
@@ -46,7 +47,13 @@
   onMount(() => {
     document.addEventListener("click", externalLinks);
     api.noticeAccepted().then((ok) => (noticeOk = ok)).catch(() => (noticeOk = false));
-    api.status().then((s) => (claudeProblem = s.claude.installed && s.claude.logged_in ? null : s.claude.problem)).catch(() => {});
+    api
+      .status()
+      .then((s) => {
+        claudeProblem = s.claude.installed && s.claude.logged_in ? null : s.claude.problem;
+        if (s.startup.result?.kind === "restored") restored = s.startup.result.created_at;
+      })
+      .catch(() => {});
     const stop = live(async () => {
       try {
         jobs = await api.jobs();
@@ -73,7 +80,7 @@
         <li><strong>Personal study only.</strong> Don't publish or sell generated courses or downloaded material. Follow each source's licence, and don't use the app to get around paywalls, logins or site terms.</li>
         <li><strong>Your data goes to Anthropic.</strong> Course requests and the work you submit, including photos, are sent to Anthropic through your own Claude Code, under your own agreement with Anthropic. Don't submit other people's personal information.</li>
         <li><strong>Academic integrity.</strong> If you're at a school or university, follow its rules on AI tools.</li>
-        <li><strong>Back up your data.</strong> Everything is stored only on this computer.</li>
+        <li><strong>Back up your data.</strong> Everything is stored only on this computer. SelfSemester makes a copy in Documents before each update, but keep your own copy somewhere else too.</li>
       </ul>
       <p class="small muted">Full terms: DISCLAIMER.md at <a href="https://github.com/munitkala/selfsemester/blob/main/DISCLAIMER.md">github.com/munitkala/selfsemester</a>. SelfSemester isn't affiliated with or endorsed by Anthropic.</p>
       <label class="agree"><input type="checkbox" bind:checked={agreed} /> I've read and accept these terms</label>
@@ -105,6 +112,9 @@
     </div>
   </aside>
   <main>
+    {#if restored}
+      <p class="note">Your data was missing when SelfSemester started, so it restored your newest backup (from {when(restored)}). <a href="/settings">Settings</a> <button class="ghost small" onclick={() => (restored = null)}>OK</button></p>
+    {/if}
     {#if claudeProblem}
       <p class="note bad">{claudeProblem} <a href="/settings">Settings</a></p>
     {/if}

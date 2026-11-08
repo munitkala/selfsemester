@@ -14,11 +14,14 @@ go on a transcript, and finished courses are archived to your Documents folder.
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it on the same
 schedule. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
-> **Status: early (0.3.0).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.4.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 ## Latest update (November 2026)
 
-Version 0.3.0 is out. Courses now feel a lot more like actual school: every course has its own classroom with a
+Version 0.4.0 is out, and you can now download a ready-made installer. Updating keeps all your courses and
+progress, and SelfSemester backs up your data before every update just in case.
+
+In 0.3.0, courses started to feel a lot more like actual school: every course has its own classroom with a
 home page, weekly modules, a syllabus, a gradebook and a materials tab, plus next and previous buttons on lessons.
 The course builder got the details a real course has too: course code, term, instructor, colour, a welcome
 message, learning outcomes and weekly objectives.
@@ -128,6 +131,7 @@ Courses you write in the course builder never leave your computer, unless you as
 | `%LOCALAPPDATA%\SelfSemester` | Database, course files, sealed answer keys, submissions, your course materials |
 | `Documents\SelfSemester\Course builder` | Courses you export from the course builder, to edit in a text editor |
 | `Documents\SelfSemester\Completed` | Archives of finished courses: summary, lesson notes, your work, feedback, reference list |
+| `Documents\SelfSemester\Backups` | Safety copies of your data, made before each update (the last 5 are kept) |
 
 ## Legal and responsible use
 
@@ -144,7 +148,8 @@ first time it opens. In short:
 - **Your Claude account, your agreement.** Claude Code runs under your own agreement with Anthropic, and your
   requests and submitted work are sent to Anthropic.
 - **Academic integrity.** If you're at a school or university, follow its rules on AI tools.
-- **Back up your data.** Everything lives on your computer, and nobody else can recover it.
+- **Back up your data.** Everything lives on your computer, and nobody else can recover it. SelfSemester copies it
+  to `Documents\SelfSemester\Backups` before each update, but keep your own copy somewhere else too.
 
 ## Install
 
@@ -161,9 +166,14 @@ first time it opens. In short:
 The installers are built by GitHub Actions straight from the tagged source code (see
 `.github/workflows/release.yml`), not on anyone's own computer.
 
-To update, download the newer installer and run it: your courses and settings are kept. To uninstall, use
-**Settings → Apps → Installed apps** in Windows. Your data in `%LOCALAPPDATA%\SelfSemester` and
-`Documents\SelfSemester` stays until you delete it yourself.
+**Updating:** download the newer installer and run it. It replaces only the program: your courses, materials,
+marks, transcript and course-builder drafts are kept, and the new version backs them up to
+`Documents\SelfSemester\Backups` before it first opens them. If your data ever goes missing, SelfSemester restores
+the newest backup by itself when it starts. **Settings → Your data and backups** shows the backups and has a
+**Back up now** button.
+
+**Uninstalling:** use **Settings → Apps → Installed apps** in Windows. Your data in `%LOCALAPPDATA%\SelfSemester`
+and `Documents\SelfSemester` stays until you delete it yourself.
 
 ### Or build it yourself
 
@@ -224,6 +234,7 @@ src-tauri/src/
     seal.rs               encrypted answer keys and exams
   db/                     SQLite schema, migrations, job queue
   worker.rs               background thread: runs one Claude job at a time and ticks the clock
+  backup.rs               backups before each update, and restoring if the data goes missing
 ```
 
 Every call to Claude is a row in a job queue, so work survives crashes and usage limits. Each call runs in an empty

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppStatus } from "$lib/api";
+  import { api, type AppStatus, type BackupInfo } from "$lib/api";
   import { when } from "$lib/format";
 
   let status = $state<AppStatus | null>(null);
@@ -8,6 +8,32 @@
   let testing = $state(false);
   let test = $state<Awaited<ReturnType<typeof api.test>> | null>(null);
   let testError = $state<string | null>(null);
+  let backups = $state<BackupInfo[]>([]);
+  let backingUp = $state(false);
+  let backupMsg = $state<string | null>(null);
+  let backupError = $state<string | null>(null);
+
+  async function loadBackups() {
+    backups = await api.backups().catch(() => []);
+  }
+
+  async function backupNow() {
+    backingUp = true;
+    backupMsg = backupError = null;
+    try {
+      await api.backupNow();
+      backupMsg = "Backed up.";
+      await loadBackups();
+    } catch (e) {
+      backupError = String(e);
+    } finally {
+      backingUp = false;
+    }
+  }
+
+  function size(b: number) {
+    return b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+  }
 
   async function refresh() {
     loadError = null;
@@ -32,7 +58,10 @@
   }
 
   const ready = $derived(!!status?.claude.installed && !!status?.claude.logged_in);
-  onMount(refresh);
+  onMount(() => {
+    refresh();
+    loadBackups();
+  });
 </script>
 
 <h1>Settings</h1>
@@ -88,6 +117,43 @@
   {/if}
 </section>
 
+<section class="card">
+  <div class="spread">
+    <h2>Your data and backups</h2>
+    <button class="ghost" onclick={backupNow} disabled={backingUp}>{backingUp ? "Backing up…" : "Back up now"}</button>
+  </div>
+  <p class="small muted">
+    Updating SelfSemester never touches your courses: the installer only replaces the program. On top of that, before a new
+    version opens your data for the first time, the app copies your database and every course's files to
+    <code>Documents\SelfSemester\Backups</code>. If it ever starts and finds your data missing, it puts the newest backup
+    back by itself. The last 5 backups are kept.
+  </p>
+  {#if status?.startup.problem}<p class="note bad">The backup at start-up didn't work: {status.startup.problem}</p>{/if}
+  {#if status?.startup.result?.kind === "backed_up"}<p class="small good">Version {status.startup.version} backed up your data before its first start.</p>{/if}
+  {#if status?.startup.result?.kind === "restored"}<p class="note">Your data was missing at start-up, so the backup from {when(status.startup.result.created_at)} was restored.</p>{/if}
+  {#if backupMsg}<p class="small good">{backupMsg}</p>{/if}
+  {#if backupError}<p class="note bad">{backupError}</p>{/if}
+  {#if backups.length}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Made</th><th>Why</th><th>Size</th></tr></thead>
+        <tbody>
+          {#each backups as b (b.folder)}
+            <tr>
+              <td>{b.manifest ? when(b.manifest.created_at) : b.folder}</td>
+              <td class="small">{b.manifest?.reason === "update" ? `Before version ${b.manifest.app_version}${b.manifest.from_version ? ` (from ${b.manifest.from_version})` : ""}` : "By you"}</td>
+              <td class="small">{size(b.bytes)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {:else}
+    <p class="small muted">No backups yet. One is made before each update, or press Back up now.</p>
+  {/if}
+  {#if status}<button class="ghost small" onclick={() => api.openFolder(status!.user_dir)}>Open the Documents folder</button>{/if}
+</section>
+
 {#if status}
   <section class="card">
     <h2>Folders</h2>
@@ -99,7 +165,7 @@
       <dt>Grading</dt>
       <dd>Percent, letter grade and 4.0 GPA (Ontario-style bands)</dd>
     </dl>
-    <p class="small muted">Database schema v{status.schema_version}</p>
+    <p class="small muted">SelfSemester {status.startup.version} · database schema v{status.schema_version}</p>
   </section>
 {/if}
 

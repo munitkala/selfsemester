@@ -15,4 +15,4 @@
 - [ ] One-click application installer & environment bootstrapper (standalone setup without manual setup prerequisites)
 - [ ] Active recall study modes & flashcard integration
 - [ ] Exportable syllabus & transcript generation (PDF / Markdown exports)
-- [ ] Installer
+- [x] Installer

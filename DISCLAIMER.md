@@ -64,8 +64,9 @@ you submit elsewhere as your own where that isn't allowed. That responsibility i
 
 ## 8. Your data
 
-Everything is stored on your own computer. The authors never receive it and can't recover it. Back up the folders
-listed in the README if your courses matter to you.
+Everything is stored on your own computer. The authors never receive it and can't recover it. SelfSemester copies
+your data to `Documents\SelfSemester\Backups` before each update, but those copies are on the same computer: if your
+courses matter to you, also keep a copy of the folders listed in the README somewhere else.
 
 ## 9. Changes
 

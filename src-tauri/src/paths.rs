@@ -61,6 +61,10 @@ impl AppPaths {
     pub fn completed_dir(&self) -> PathBuf {
         self.user_dir.join("Completed")
     }
+    /// Safety copies of your data, made before each update (see backup.rs). Outside the program folder on purpose.
+    pub fn backups_dir(&self) -> PathBuf {
+        self.user_dir.join("Backups")
+    }
 
     /// Create every top-level folder. Safe to call on each launch.
     pub fn ensure(&self) -> io::Result<()> {

@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod claude;
 pub mod course;
 pub mod db;
@@ -15,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 pub struct AppState {
+    pub startup: StartupInfo,
     pub paths: AppPaths,
     pub db: Arc<Mutex<Connection>>,
     pub runner: Arc<dyn ClaudeRunner>,
@@ -22,6 +24,15 @@ pub struct AppState {
 }
 
 type Res<T> = Result<T, String>;
+
+/// What happened to your data when the app started (shown in Settings, and once as a note if it was restored).
+#[derive(Clone, Serialize)]
+pub struct StartupInfo {
+    pub version: String,
+    pub result: Option<backup::Startup>,
+    /// Set when the safety backup couldn't be made; the app still starts.
+    pub problem: Option<String>,
+}
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -47,6 +58,7 @@ impl worker::Shell for TauriShell {
 
 #[derive(Serialize)]
 struct AppStatus {
+    startup: StartupInfo,
     claude: ClaudeStatus,
     data_dir: String,
     user_dir: String,
@@ -61,6 +73,7 @@ async fn app_status(state: tauri::State<'_, AppState>) -> Res<AppStatus> {
     let claude = tauri::async_runtime::spawn_blocking(move || runner.status()).await.map_err(err)?;
     let conn = state.db.lock().unwrap();
     Ok(AppStatus {
+        startup: state.startup.clone(),
         claude,
         data_dir: state.paths.data_dir.display().to_string(),
         user_dir: state.paths.user_dir.display().to_string(),
@@ -122,6 +135,25 @@ fn resume_now(app: AppHandle, state: tauri::State<'_, AppState>, course_id: Opti
     let n = db::jobs::resume_waiting(&state.db.lock().unwrap(), course_id.as_deref(), chrono::Utc::now()).map_err(err)?;
     changed(&app);
     Ok(n)
+}
+
+// ---------- backups ----------
+
+#[tauri::command]
+fn list_backups(state: tauri::State<'_, AppState>) -> Vec<backup::BackupInfo> {
+    backup::list(&state.paths)
+}
+
+#[tauri::command]
+async fn backup_now(state: tauri::State<'_, AppState>) -> Res<String> {
+    let paths = state.paths.clone();
+    let version = state.startup.version.clone();
+    // copying course files can take a moment; keep it off the UI thread
+    let dir = tauri::async_runtime::spawn_blocking(move || backup::create(&paths, "manual", Some(&version), &version))
+        .await
+        .map_err(err)?
+        .map_err(|e| format!("Couldn't make the backup: {e}"))?;
+    Ok(dir.display().to_string())
 }
 
 // ---------- terms notice ----------
@@ -375,7 +407,17 @@ fn open_folder(app: AppHandle, state: tauri::State<'_, AppState>, path: String) 
 pub fn run() {
     let paths = AppPaths::standard().expect("standard folders");
     paths.ensure().expect("create app folders");
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    // back up (or restore) before this version opens and upgrades the database
+    let startup = match backup::before_open(&paths, &version, db::latest_schema()) {
+        Ok(r) => StartupInfo { version: version.clone(), result: Some(r), problem: None },
+        Err(e) => {
+            eprintln!("start-up backup failed: {e}");
+            StartupInfo { version: version.clone(), result: None, problem: Some(e.to_string()) }
+        }
+    };
     let conn = db::open(&paths.db_file()).expect("open database");
+    backup::mark_version(&conn, &version).expect("record app version");
     db::jobs::requeue_interrupted(&conn).expect("requeue jobs");
     let sealer = Sealer::load(&conn).expect("seal key");
     let runner: Arc<dyn ClaudeRunner> = Arc::new(CliRunner::new(paths.claude_workdir()));
@@ -387,7 +429,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { paths, db, runner, sealer })
+        .manage(AppState { startup, paths, db, runner, sealer })
         .setup(move |app| {
             worker.clone().spawn(Arc::new(TauriShell(app.handle().clone())));
             Ok(())
@@ -426,7 +468,9 @@ pub fn run() {
             builder_export,
             builder_import,
             get_transcript,
-            open_folder
+            open_folder,
+            list_backups,
+            backup_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

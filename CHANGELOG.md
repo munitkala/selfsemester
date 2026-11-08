@@ -5,9 +5,35 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-- Each release now has a ready-made Windows installer to download, built by GitHub Actions from the tagged source
+Nothing yet.
+
+## 0.4.0 (2026-11-08)
+
+### Your work is kept across updates
+
+**Why:** installing a new version should never cost you a course, a mark or a file you added.
+
+- Installing a new version replaces only the program. Your courses, materials, submissions, marks and transcript
+  stay where they are (`%LOCALAPPDATA%\SelfSemester` and `Documents\SelfSemester`), and so does a draft in the course
+  builder. Uninstalling leaves them too.
+- Before a new version opens your data for the first time (and upgrades the database), it now copies the database
+  and every course's files to `Documents\SelfSemester\Backups`, outside the program folder. The last 5 backups are
+  kept.
+- If SelfSemester starts and finds your data missing but a backup exists, it restores the newest one by itself and
+  says so.
+- **Settings → Your data and backups** lists the backups, shows what happened at start-up, and has a
+  **Back up now** button.
+
+### A ready-made installer
+
+- Each release now has a Windows installer to download, built by GitHub Actions from the tagged source
   (`.github/workflows/release.yml`), with a SHA-256 checksum next to it. The README explains downloading it as well
   as building it yourself.
+
+### About the version number
+
+This is 0.4.0, not 1.0.0. Having an installer doesn't make the app finished: 1.0.0 will mean it has had real use,
+its data format is settled and updates from then on keep working without surprises.
 
 ## 0.3.0 (2026-11-08)
 

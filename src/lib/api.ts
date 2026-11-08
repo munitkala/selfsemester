@@ -23,7 +23,20 @@ export type ClaudeStatus = {
   problem: string | null;
 };
 
-export type AppStatus = { claude: ClaudeStatus; data_dir: string; user_dir: string; schema_version: number; jobs: JobSummary };
+export type Startup =
+  | { kind: "fresh" }
+  | { kind: "unchanged" }
+  | { kind: "backed_up"; folder: string }
+  | { kind: "restored"; folder: string; created_at: string };
+export type StartupInfo = { version: string; result: Startup | null; problem: string | null };
+export type BackupInfo = {
+  folder: string;
+  path: string;
+  bytes: number;
+  manifest: { created_at: string; reason: string; from_version: string | null; app_version: string; schema_version: number } | null;
+};
+
+export type AppStatus = { startup: StartupInfo; claude: ClaudeStatus; data_dir: string; user_dir: string; schema_version: number; jobs: JobSummary };
 
 export type CourseMeta = {
   code: string;
@@ -252,6 +265,8 @@ export const api = {
   builderImport: (folder: string) => invoke<string>("builder_import", { folder }),
   transcript: () => invoke<Transcript>("get_transcript"),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
+  backups: () => invoke<BackupInfo[]>("list_backups"),
+  backupNow: () => invoke<string>("backup_now"),
 };
 
 /** Re-run `load` now and whenever the backend says data changed. Returns a cleanup function. */
