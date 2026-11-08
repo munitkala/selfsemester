@@ -16,6 +16,19 @@ schedule. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 > **Status: early (0.2.0).** It works end to end but has had little real-world use. Expect rough edges.
 
+## Latest update (November 2026)
+
+Version 0.2.0 is out. What's new:
+
+- **Add your own stuff to a course**: notes, PDFs, images. Claude uses them when it builds and marks the course.
+- **Sandbox mode**: retry as many times as you want, no late penalties. Structured mode is still there if you
+  want it to feel like a real course.
+- **Instant feedback** on multiple choice and number questions the moment you submit.
+- **Review with Claude**: ask about your mark and the feedback on anything you've handed in.
+- **Course builder**: write your own course without Claude and run it the same way.
+
+The full list is in the [changelog](CHANGELOG.md).
+
 ## Screenshots
 
 Shown with a one-week "Git basics" course that Claude generated for a test run (example names in it are made up).
