@@ -37,7 +37,7 @@
         <tbody>
           {#each t.entries as e}
             <tr>
-              <td><a href="/course/{encodeURIComponent(e.course_id)}">{e.title}</a></td>
+              <td><a href="/course/{encodeURIComponent(e.course_id)}">{e.title}</a>{#if e.sandbox} <span class="pill" title="Unlimited attempts, no late penalties">Sandbox</span>{/if}</td>
               <td>{day(e.started_on)}</td>
               <td>{day(e.finished_on)}</td>
               <td>{pct(e.final_percent)}</td>

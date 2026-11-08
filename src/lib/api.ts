@@ -78,6 +78,7 @@ export type Plan = {
 };
 
 export type LatePolicy = { kind: "lock_zero" } | { kind: "penalty"; per_day: number; max_days: number };
+export type Strictness = "structured" | "sandbox";
 
 export type CourseView = {
   id: string;
@@ -101,6 +102,8 @@ export type CourseView = {
   sources: { url: string; title: string | null; licence: string | null; attribution: string | null; free: boolean }[];
   archive_dir: string | null;
   progress: Progress | null;
+  strictness: Strictness;
+  origin: "claude" | "manual";
 };
 
 export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
@@ -122,6 +125,7 @@ export type ItemView = {
     answers: Record<string, string> | null;
     files: string[] | null;
     late_days: number;
+    instant: { lines: MarkLine[]; awarded: number; possible: number } | null;
   } | null;
   mark: {
     raw_percent: number;
@@ -134,6 +138,40 @@ export type ItemView = {
   answer_key: { question_id: string; answer: string; explanation: string }[] | null;
   marking_status: string | null;
   marking_progress: Progress | null;
+  strictness: Strictness;
+  origin: "claude" | "manual";
+  attempts: number;
+  key_revealed: boolean;
+  can_resubmit: boolean;
+  self_mark: { criterion: string; points: number; auto: boolean }[] | null;
+  review: ReviewThread | null;
+};
+
+export type ReviewThread = {
+  messages: { id: number; role: "learner" | "claude" | "note"; text: string; created_at: string }[];
+  pending: string | null;
+  next_attempt_at: string | null;
+};
+
+export type GenItem = {
+  key: string;
+  kind: string;
+  title: string;
+  module: string;
+  instructions: string;
+  questions: Question[];
+  rubric: RubricLine[];
+  answer_key: { question_id: string; answer: string; explanation: string; tolerance: number }[];
+  due_days: number;
+};
+
+export type DraftUnit = { title: string; week: number; topics: string[]; lesson_title: string; lesson: string; est_minutes: number; items: GenItem[] };
+export type Draft = {
+  title: string;
+  subject: string;
+  summary: string;
+  weights: Record<"homework" | "assignment" | "quiz" | "test" | "exam" | "project", number>;
+  units: DraftUnit[];
 };
 
 export type Today = {
@@ -147,7 +185,7 @@ export type Today = {
 };
 
 export type Transcript = {
-  entries: { course_id: string; title: string; started_on: string; finished_on: string; final_percent: number; letter: string; gpa: number }[];
+  entries: { course_id: string; title: string; started_on: string; finished_on: string; final_percent: number; letter: string; gpa: number; sandbox: boolean }[];
   average: number | null;
   gpa: number | null;
 };
@@ -164,8 +202,8 @@ export const api = {
   create: (subject: string, notes: string) => invoke<string>("create_course", { subject, notes }),
   answerIntake: (id: string, answers: Record<string, string>) => invoke<void>("answer_intake", { id, answers }),
   chooseBundle: (id: string, choice: string) => invoke<void>("choose_bundle", { id, choice }),
-  approve: (id: string, startDate: string, latePolicy: LatePolicy, onTranscript: boolean) =>
-    invoke<void>("approve_course", { id, startDate, latePolicy, onTranscript }),
+  approve: (id: string, startDate: string, latePolicy: LatePolicy, strictness: Strictness, onTranscript: boolean) =>
+    invoke<void>("approve_course", { id, startDate, latePolicy, strictness, onTranscript }),
   retry: (id: string) => invoke<number>("retry_course", { id }),
   remove: (id: string) => invoke<void>("delete_course", { id }),
   materials: (courseId: string) => invoke<Material[]>("list_materials", { courseId }),
@@ -178,6 +216,16 @@ export const api = {
   markRead: (id: string) => invoke<void>("mark_lesson_read", { id }),
   submit: (id: string, textAnswer: string, answers: Record<string, string>, files: string[]) =>
     invoke<{ submission_id: string; status: string; late_days: number }>("submit_item", { id, textAnswer, answers, files }),
+  selfMark: (id: string, awarded: number[], comment: string) => invoke<void>("self_mark_item", { id, awarded, comment }),
+  revealKey: (id: string) => invoke<void>("reveal_answer_key", { id }),
+  sendReview: (id: string, text: string) => invoke<void>("send_review_message", { id, text }),
+  builderCreate: (title: string) => invoke<string>("builder_create", { title }),
+  builderGet: (id: string) => invoke<{ draft: Draft; problems: string[] }>("builder_get", { id }),
+  builderSave: (id: string, draft: Draft) => invoke<string[]>("builder_save", { id, draft }),
+  builderPublish: (id: string, startDate: string, latePolicy: LatePolicy, strictness: Strictness, onTranscript: boolean) =>
+    invoke<void>("builder_publish", { id, startDate, latePolicy, strictness, onTranscript }),
+  builderExport: (id: string) => invoke<string>("builder_export", { id }),
+  builderImport: (folder: string) => invoke<string>("builder_import", { folder }),
   transcript: () => invoke<Transcript>("get_transcript"),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
 };

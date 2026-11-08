@@ -23,6 +23,7 @@
     { href: "/", label: "Today" },
     { href: "/courses", label: "Courses" },
     { href: "/new", label: "New course" },
+    { href: "/build", label: "Course builder" },
     { href: "/transcript", label: "Transcript" },
     { href: "/settings", label: "Settings" },
   ];

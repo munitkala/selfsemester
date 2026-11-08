@@ -4,6 +4,7 @@
   import { api, live, type ItemView } from "$lib/api";
   import { render } from "$lib/markdown";
   import ProgressBar from "$lib/Progress.svelte";
+  import Review from "$lib/Review.svelte";
   import { kindLabel, stateLabel, when, relative, pct } from "$lib/format";
 
   const id = $derived(page.params.id ?? "");
@@ -18,6 +19,10 @@
   let preview = $state(false);
   let confirmSubmit = $state(false);
   let result = $state<string | null>(null);
+  let retrying = $state(false); // sandbox: answering again after a marked attempt
+  let confirmReveal = $state(false);
+  let selfMarks = $state<Record<number, number>>({});
+  let selfComment = $state("");
 
   $effect(() => {
     const itemId = id;
@@ -34,6 +39,9 @@
   const content = $derived(v?.content ?? null);
   const late = $derived(!!v?.item.due_at && new Date(v.item.due_at).getTime() < Date.now());
   const isQuiz = $derived(content?.module === "quiz");
+  const sandbox = $derived(v?.strictness === "sandbox");
+  // the answer form shows for open items, and in sandbox courses when trying again
+  const answering = $derived(!!v && (v.item.state === "open" || (v.can_resubmit && retrying)));
   const needsText = $derived(!!content && !isQuiz && content.questions.some((q) => q.type === "short" || q.type === "long"));
 
   async function pickFiles() {
@@ -50,8 +58,49 @@
     error = null;
     try {
       const out = await api.submit(id, text, $state.snapshot(answers), $state.snapshot(files));
-      result = out.status === "marked" ? "Marked straight away. Your result is below." : "Submitted. Claude will mark it shortly.";
+      result =
+        out.status === "marked"
+          ? "Marked straight away. Your result is below."
+          : out.status === "self"
+            ? "Submitted. Mark it yourself below, against the answer key."
+            : "Submitted. Any multiple-choice and numeric answers are checked below already; Claude marks the rest shortly.";
       confirmSubmit = false;
+      retrying = false;
+      files = [];
+      v = await api.item(id);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** "Question 2" for a question id, the criterion's own name otherwise. */
+  function questionLabel(criterion: string) {
+    const i = content?.questions.findIndex((q) => q.id === criterion) ?? -1;
+    return i >= 0 ? `Question ${i + 1}` : criterion;
+  }
+
+  async function selfMark() {
+    if (!v?.self_mark) return;
+    busy = true;
+    error = null;
+    try {
+      await api.selfMark(id, v.self_mark.map((_, i) => Number(selfMarks[i] ?? 0)), selfComment);
+      result = "Marked. Your result is below.";
+      v = await api.item(id);
+    } catch (e) {
+      error = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function reveal() {
+    busy = true;
+    try {
+      await api.revealKey(id);
+      confirmReveal = false;
       v = await api.item(id);
     } catch (e) {
       error = String(e);
@@ -88,6 +137,7 @@
         · due {when(v.item.due_at)} <span class={late ? "bad" : ""}>({relative(v.item.due_at)})</span>
         · {v.points} points · {Math.round(v.item.weight * 1000) / 10}% of the course
       {/if}
+      {#if sandbox && v.item.kind !== "lesson"} · <span class="pill">Sandbox</span>{#if v.attempts}<span> · attempt {v.attempts}</span>{/if}{/if}
     </p>
   {/if}
 
@@ -118,7 +168,7 @@
           {#each content.questions as q (q.id)}
             <li>
               <div class="spread"><div class="prose">{@html render(q.prompt)}</div><span class="muted small">{q.points} pts</span></div>
-              {#if v.item.state === "open" && (q.type === "mcq" || q.type === "numeric")}
+              {#if answering && (q.type === "mcq" || q.type === "numeric")}
                 {#if q.type === "mcq"}
                   <div class="options">
                     {#each q.options as o}
@@ -149,10 +199,11 @@
       {/if}
     </section>
 
-    {#if v.item.state === "open"}
+    {#if answering}
       <section class="card">
-        <h2>Your answer</h2>
-        {#if late}<p class="note">The deadline has passed. {policyText(v.late_policy)}</p>{/if}
+        <h2>{v.attempts ? `Attempt ${v.attempts + 1}` : "Your answer"}</h2>
+        {#if late && !sandbox}<p class="note">The deadline has passed. {policyText(v.late_policy)}</p>{/if}
+        {#if late && sandbox}<p class="note">The deadline has passed. This is a sandbox course, so there's no penalty.</p>{/if}
         {#if needsText || (!isQuiz && content.questions.length === 0)}
           <div class="field">
             <div class="spread">
@@ -183,19 +234,70 @@
         {/if}
         {#if confirmSubmit}
           <div class="row">
-            <span>Submit now? You get one submission.</span>
+            <span>{sandbox ? "Submit this attempt? You can try again once it's marked." : "Submit now? You get one submission."}</span>
             <button onclick={submit} disabled={busy}>{busy ? "Submitting…" : "Yes, submit"}</button>
             <button class="ghost" onclick={() => (confirmSubmit = false)}>Not yet</button>
           </div>
         {:else}
-          <button onclick={() => (confirmSubmit = true)}>Submit</button>
+          <div class="row">
+            <button onclick={() => (confirmSubmit = true)}>Submit</button>
+            {#if retrying}<button class="ghost" onclick={() => (retrying = false)}>Cancel</button>{/if}
+          </div>
         {/if}
       </section>
     {/if}
 
     {#if result}<p class="note info">{result}</p>{/if}
 
-    {#if v.submission && v.item.state === "submitted"}
+    {#if v.submission?.instant && v.item.state === "submitted"}
+      <section class="card">
+        <div class="spread">
+          <h2>Instant feedback</h2>
+          <strong>{v.submission.instant.awarded} / {v.submission.instant.possible}</strong>
+        </div>
+        <p class="small muted">Your multiple-choice and numeric answers, checked the moment you submitted. The full mark follows.</p>
+        <ul class="instant">
+          {#each v.submission.instant.lines as l}
+            <li><span class={l.awarded > 0 ? "good" : "bad"}>{l.awarded > 0 ? "✓" : "✗"}</span> {l.criterion}: {l.comment} <span class="muted small">({l.awarded} / {l.possible})</span></li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    {#if v.self_mark && v.item.state === "submitted"}
+      <section class="card">
+        <h2>Mark your work</h2>
+        <p class="small muted">You wrote this course, so you mark it. Compare your work with the answer key below and give each line its points. Multiple-choice and numeric questions are marked for you.</p>
+        {#if v.submission?.text_answer}
+          <h3>Your answer</h3>
+          <div class="prose preview">{@html render(v.submission.text_answer)}</div>
+        {/if}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Line</th><th>Points</th></tr></thead>
+            <tbody>
+              {#each v.self_mark as line, i}
+                <tr>
+                  <td>{questionLabel(line.criterion)}</td>
+                  <td class="nowrap">
+                    {#if line.auto}
+                      <span class="muted small">marked by the app</span>
+                    {:else}
+                      <input type="number" min="0" max={line.points} step="0.5" bind:value={selfMarks[i]} class="pts" aria-label="Points for {line.criterion}" /> / {line.points}
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <div class="field">
+          <label for="self-comment">Note to yourself <span class="hint">optional</span></label>
+          <textarea id="self-comment" rows="2" bind:value={selfComment}></textarea>
+        </div>
+        <button onclick={selfMark} disabled={busy}>Save my mark</button>
+      </section>
+    {:else if v.submission && v.item.state === "submitted"}
       <section class="card">
         <h2>Submitted {when(v.submission.submitted_at)}</h2>
         {#if markingState[0] === "waiting_usage"}
@@ -221,7 +323,7 @@
         {#if v.mark.marker === "missed"}
           <p class="bad">Not submitted before the deadline.</p>
         {:else}
-          <p class="small muted">Marked {v.mark.marker === "auto" ? "automatically" : `by Claude (${v.mark.marker})`} · {when(v.mark.marked_at)}</p>
+          <p class="small muted">Marked {v.mark.marker === "auto" ? "automatically" : v.mark.marker === "self" ? "by you" : `by Claude (${v.mark.marker})`} · {when(v.mark.marked_at)}</p>
         {/if}
         {#if v.mark.breakdown.lines?.length}
           <div class="table-wrap">
@@ -240,14 +342,27 @@
           <h3>To revise</h3>
           <ul>{#each v.mark.breakdown.revise as r}<li>{r}</li>{/each}</ul>
         {/if}
-        {#if v.mark.marker !== "auto" && v.mark.marker !== "missed"}
-          <p class="small muted">AI marking can be wrong. If something looks off, check it against the answer key below.</p>
+        {#if v.mark.marker !== "auto" && v.mark.marker !== "missed" && v.mark.marker !== "self"}
+          <p class="small muted">AI marking can be wrong. If something looks off, check it against the answer key{sandbox && !v.key_revealed ? " once you reveal it" : " below"}.</p>
+        {/if}
+        {#if v.can_resubmit && !retrying}
+          <div class="row sandbox">
+            <button onclick={() => { retrying = true; result = null; }}>Try again</button>
+            {#if confirmReveal}
+              <span class="small">Show the answer key? This item closes and this mark stands.</span>
+              <button class="danger" onclick={reveal} disabled={busy}>Show it</button>
+              <button class="ghost" onclick={() => (confirmReveal = false)}>Not yet</button>
+            {:else}
+              <button class="ghost" onclick={() => (confirmReveal = true)}>Show the answer key…</button>
+            {/if}
+          </div>
+          <p class="small muted">Sandbox: your latest attempt is the one that counts.</p>
         {/if}
       </section>
     {/if}
 
     {#if v.answer_key?.length}
-      <details class="card">
+      <details class="card" open={v.item.state === "submitted"}>
         <summary>Answer key</summary>
         <ol class="small">
           {#each v.answer_key as k}
@@ -255,6 +370,10 @@
           {/each}
         </ol>
       </details>
+    {/if}
+
+    {#if v.review}
+      <Review itemId={id} thread={v.review} keyHidden={sandbox && v.item.state === "marked" && !v.key_revealed} courseId={v.item.course_id} />
     {/if}
   {/if}
 {:else if !error}
@@ -331,6 +450,20 @@
   }
   .score {
     font-size: 1.6rem;
+  }
+  .instant {
+    list-style: none;
+    padding: 0;
+    margin: 0.4rem 0 0;
+  }
+  .instant li {
+    padding: 0.2rem 0;
+  }
+  .pts {
+    width: 5rem;
+  }
+  .sandbox {
+    margin-top: 1rem;
   }
   .nowrap {
     white-space: nowrap;

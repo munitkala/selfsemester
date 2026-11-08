@@ -1,6 +1,6 @@
 //! Submissions, marking, grades, the transcript, and the end-of-course archive.
 
-use super::schedule::{LatePolicy, submission_window, ts};
+use super::schedule::{LatePolicy, Strictness, sandbox_closes, submission_window, ts};
 use super::seal::Sealer;
 use super::types::*;
 use crate::db::jobs;
@@ -90,10 +90,40 @@ pub fn auto_mark(public: &ItemPublic, key: &ItemKey, answers: &Value) -> (Vec<Ma
     (lines, got, total)
 }
 
+/// Instant feedback: the multiple-choice and numeric questions, marked the moment work comes in. Says right or
+/// wrong but never what the right answer is, because the full marking (or another sandbox attempt) is still to come.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct Instant {
+    pub lines: Vec<MarkLine>,
+    pub awarded: f64,
+    pub possible: f64,
+}
+
+pub fn instant_feedback(public: &ItemPublic, key: &ItemKey, answers: &Value) -> Option<Instant> {
+    let auto = ItemPublic { questions: public.questions.iter().filter(|q| auto_markable(q)).cloned().collect(), ..public.clone() };
+    if auto.questions.is_empty() {
+        return None;
+    }
+    let (mut lines, awarded, possible) = auto_mark(&auto, key, answers);
+    for l in &mut lines {
+        l.comment = if l.awarded > 0.0 { "Right.".into() } else { "Not right.".into() };
+    }
+    Some(Instant { lines, awarded, possible })
+}
+
+/// The course's strictness and who wrote it ('claude' or 'manual').
+fn course_rules(conn: &Connection, course_id: &str) -> Result<(Strictness, String), String> {
+    conn.query_row("SELECT strictness, origin FROM courses WHERE id=?1", [course_id], |r| {
+        Ok((Strictness::parse(&r.get::<_, String>(0)?), r.get(1)?))
+    })
+    .map_err(io)
+}
+
 #[derive(Debug, Serialize)]
 pub struct SubmitOutcome {
     pub submission_id: String,
-    /// "marked" when marked on the spot (quizzes), "queued" when waiting for Claude.
+    /// "marked" when marked on the spot (quizzes), "queued" when waiting for Claude, "self" when the learner marks
+    /// it themselves (courses written in the course builder).
     pub status: String,
     pub late_days: i64,
 }
@@ -143,29 +173,57 @@ pub fn submit(
     let key: ItemKey = sealer
         .read_json(&dir.join(it.key_ref.as_deref().ok_or("Item has no answer key.")?))
         .map_err(|e| e.to_string())?;
+    let (strictness, origin) = course_rules(conn, &it.course_id)?;
     let all_auto = !public.questions.is_empty() && public.questions.iter().all(auto_markable) && stored.is_empty();
-    if it.module == "quiz" && all_auto {
-        let (lines, got, total) = auto_mark(&public, &key, answers);
+    // a hand-written course has no Claude to mark written work, so anything fully auto-markable is marked here
+    if all_auto && (it.module == "quiz" || origin == "manual") {
+        let (mut lines, got, total) = auto_mark(&public, &key, answers);
+        if strictness == Strictness::Sandbox {
+            // the key stays hidden while another attempt is possible: say right or wrong, not what's right
+            for l in &mut lines {
+                l.comment = if l.awarded > 0.0 { "Right.".into() } else { "Not right.".into() };
+            }
+        }
         let raw = if total > 0.0 { got / total * 100.0 } else { 0.0 };
         let result = MarkResult { lines, overall_comment: format!("{got} / {total} correct."), revise: vec![] };
         apply_mark(conn, &sub_id, item_id, raw, &result, "auto", late)?;
         return Ok(SubmitOutcome { submission_id: sub_id, status: "marked".into(), late_days: late });
     }
+    if let Some(instant) = instant_feedback(&public, &key, answers) {
+        conn.execute("UPDATE submissions SET instant_json=?2 WHERE id=?1", params![sub_id, serde_json::to_string(&instant).unwrap()])
+            .map_err(io)?;
+    }
+    if origin == "manual" {
+        return Ok(SubmitOutcome { submission_id: sub_id, status: "self".into(), late_days: late });
+    }
 
     let course_title: String = conn.query_row("SELECT title FROM courses WHERE id=?1", [&it.course_id], |r| r.get(0)).map_err(io)?;
     let final_exam = it.kind == "exam" && public.title.to_lowercase().contains("final");
     let mut req = super::prompts::mark(&course_title, &public, &key, text_answer, answers, &stored, final_exam);
+    if strictness == Strictness::Sandbox {
+        let attempt: i64 = conn.query_row("SELECT count(*) FROM submissions WHERE item_id=?1", [item_id], |r| r.get(0)).map_err(io)?;
+        req.prompt += &format!(
+            "\nThis course is in Sandbox mode: the learner can resubmit until they choose to see the answer key, and this \
+             is attempt {attempt}. Mark with the same rubric and standard, but don't reveal the answer key: point at what \
+             to rethink so the next attempt can fix it.\n"
+        );
+    }
     super::materials::attach(conn, &it.course_id, &mut req, super::materials::Use::Mark)?;
     jobs::enqueue_with(conn, Some(&it.course_id), "mark", Some(&sub_id), jobs::PRIORITY_MARKING, &req).map_err(io)?;
     Ok(SubmitOutcome { submission_id: sub_id, status: "queued".into(), late_days: late })
 }
 
-/// Store a mark, applying the course's late penalty.
+/// Store a mark, applying the course's late penalty (sandbox courses have none).
 pub fn apply_mark(conn: &Connection, sub_id: &str, item_id: &str, raw: f64, result: &MarkResult, marker: &str, late: i64) -> Result<(), String> {
-    let policy: String = conn
-        .query_row("SELECT c.late_policy FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1", [item_id], |r| r.get(0))
+    let (policy, strictness): (String, String) = conn
+        .query_row("SELECT c.late_policy, c.strictness FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1", [item_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .map_err(io)?;
-    let penalty = LatePolicy::parse(&policy).penalty(late);
+    let penalty = match Strictness::parse(&strictness) {
+        Strictness::Structured => LatePolicy::parse(&policy).penalty(late),
+        Strictness::Sandbox => 0.0,
+    };
     let raw = raw.clamp(0.0, 100.0);
     let pct = (raw - penalty).max(0.0);
     conn.execute(
@@ -175,6 +233,84 @@ pub fn apply_mark(conn: &Connection, sub_id: &str, item_id: &str, raw: f64, resu
     )
     .map_err(io)?;
     conn.execute("UPDATE items SET state='marked' WHERE id=?1", [item_id]).map_err(io)?;
+    Ok(())
+}
+
+/// The learner marks their own work (courses written in the course builder): one number per line from
+/// `self_mark_slots`. Lines the app marks itself (multiple choice, numeric) ignore the number given.
+pub fn self_mark(conn: &Connection, paths: &AppPaths, sealer: &Sealer, item_id: &str, awarded: &[f64], comment: &str) -> Result<(), String> {
+    let it = item_row(conn, item_id)?;
+    let (_, origin) = course_rules(conn, &it.course_id)?;
+    if origin != "manual" {
+        return Err("Only courses you wrote yourself are self-marked.".into());
+    }
+    let state: String = conn.query_row("SELECT state FROM items WHERE id=?1", [item_id], |r| r.get(0)).map_err(io)?;
+    if state != "submitted" {
+        return Err("There's no submission waiting to be marked.".into());
+    }
+    let (sub_id, answers, late): (String, Option<String>, i64) = conn
+        .query_row(
+            "SELECT id, answers_json, late_days FROM submissions WHERE item_id=?1 ORDER BY submitted_at DESC, rowid DESC LIMIT 1",
+            [item_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(io)?;
+    let dir = paths.course_dir(&it.course_id);
+    let public: ItemPublic = sealer.read_json(&dir.join(&it.content_ref)).map_err(|e| e.to_string())?;
+    let key: ItemKey = sealer.read_json(&dir.join(it.key_ref.as_deref().ok_or("Item has no answer key.")?)).map_err(|e| e.to_string())?;
+    let answers: Value = answers.and_then(|a| serde_json::from_str(&a).ok()).unwrap_or(Value::Null);
+    let slots = self_mark_slots(&public);
+    if awarded.len() != slots.len() {
+        return Err("Give a mark for every line.".into());
+    }
+    let (auto_lines, _, _) = auto_mark(&public, &key, &answers);
+    let mut lines = Vec::new();
+    for ((criterion, possible, auto), a) in slots.into_iter().zip(awarded) {
+        if auto {
+            let l = auto_lines.iter().find(|l| l.criterion == criterion).cloned();
+            lines.push(l.unwrap_or(MarkLine { criterion, awarded: 0.0, possible, comment: String::new() }));
+        } else {
+            if !a.is_finite() || *a < 0.0 || *a > possible {
+                return Err(format!("{criterion}: give between 0 and {possible} points."));
+            }
+            lines.push(MarkLine { criterion, awarded: *a, possible, comment: "Marked by you.".into() });
+        }
+    }
+    let possible: f64 = lines.iter().map(|l| l.possible).sum();
+    let got: f64 = lines.iter().map(|l| l.awarded).sum();
+    let raw = if possible > 0.0 { got / possible * 100.0 } else { 0.0 };
+    let result = MarkResult { lines, overall_comment: comment.trim().to_string(), revise: vec![] };
+    apply_mark(conn, &sub_id, item_id, raw, &result, "self", late)
+}
+
+/// What a self-marked item is marked on: (criterion, points, marked by the app). Its questions if it has any,
+/// otherwise its rubric, otherwise one overall line.
+pub fn self_mark_slots(public: &ItemPublic) -> Vec<(String, f64, bool)> {
+    if !public.questions.is_empty() {
+        return public.questions.iter().map(|q| (q.id.clone(), q.points, auto_markable(q))).collect();
+    }
+    if !public.rubric.is_empty() {
+        return public.rubric.iter().map(|r| (r.criterion.clone(), r.points, false)).collect();
+    }
+    vec![("Overall".into(), 10.0, false)]
+}
+
+/// Sandbox: show the answer key for a marked item. That closes it, and its latest mark stands.
+pub fn reveal_key(conn: &Connection, item_id: &str) -> Result<(), String> {
+    let (state, strictness): (String, String) = conn
+        .query_row("SELECT i.state, c.strictness FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1", [item_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .optional()
+        .map_err(io)?
+        .ok_or("No such item.")?;
+    if Strictness::parse(&strictness) != Strictness::Sandbox {
+        return Err("Only sandbox courses hold the answer key back.".into());
+    }
+    if state != "marked" {
+        return Err("The answer key opens once an attempt has been marked.".into());
+    }
+    conn.execute("UPDATE items SET key_revealed=1 WHERE id=?1", [item_id]).map_err(io)?;
     Ok(())
 }
 
@@ -205,7 +341,7 @@ pub struct Grades {
 
 pub fn grades(conn: &Connection, course_id: &str) -> rusqlite::Result<Grades> {
     let mut st = conn.prepare(
-        "SELECT i.weight, i.state, (SELECT m.percent FROM marks m WHERE m.item_id = i.id ORDER BY m.marked_at DESC LIMIT 1)
+        "SELECT i.weight, i.state, (SELECT m.percent FROM marks m WHERE m.item_id = i.id ORDER BY m.marked_at DESC, m.rowid DESC LIMIT 1)
          FROM items i WHERE i.course_id=?1 AND i.kind != 'lesson'",
     )?;
     let rows: Vec<(f64, String, Option<f64>)> = st.query_map([course_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
@@ -243,6 +379,21 @@ pub fn maybe_complete(conn: &Connection, paths: &AppPaths, sealer: &Sealer, cour
     if !g.complete || unread_or_pending > 0 {
         return Ok(None);
     }
+    // A sandbox course keeps taking attempts until every item's key is revealed or the course stops taking work.
+    let (strictness, ends_at): (String, Option<String>) =
+        conn.query_row("SELECT strictness, ends_at FROM courses WHERE id=?1", [course_id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(io)?;
+    if Strictness::parse(&strictness) == Strictness::Sandbox && sandbox_closes(ends_at.as_deref()).is_none_or(|t| Utc::now() <= t) {
+        let still_open: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM items WHERE course_id=?1 AND kind!='lesson' AND state='marked' AND key_revealed=0",
+                [course_id],
+                |r| r.get(0),
+            )
+            .map_err(io)?;
+        if still_open > 0 {
+            return Ok(None);
+        }
+    }
     let final_pct = g.current.unwrap_or(0.0);
     let now = crate::db::now_utc();
     conn.execute(
@@ -272,7 +423,7 @@ pub fn maybe_complete(conn: &Connection, paths: &AppPaths, sealer: &Sealer, cour
 /// Average mark per assessment kind.
 pub fn kind_breakdown(conn: &Connection, course_id: &str) -> rusqlite::Result<Value> {
     let mut st = conn.prepare(
-        "SELECT i.kind, sum(i.weight), avg((SELECT m.percent FROM marks m WHERE m.item_id=i.id ORDER BY m.marked_at DESC LIMIT 1))
+        "SELECT i.kind, sum(i.weight), avg((SELECT m.percent FROM marks m WHERE m.item_id=i.id ORDER BY m.marked_at DESC, m.rowid DESC LIMIT 1))
          FROM items i WHERE i.course_id=?1 AND i.kind != 'lesson' GROUP BY i.kind",
     )?;
     let rows = st.query_map([course_id], |r| {
@@ -341,7 +492,7 @@ fn write_archive(conn: &Connection, paths: &AppPaths, sealer: &Sealer, course_id
         }
         let sub: Option<(String, Option<String>, Option<String>, String)> = conn
             .query_row(
-                "SELECT id, text_answer, answers_json, files_json FROM submissions WHERE item_id=?1 ORDER BY submitted_at DESC LIMIT 1",
+                "SELECT id, text_answer, answers_json, files_json FROM submissions WHERE item_id=?1 ORDER BY submitted_at DESC, rowid DESC LIMIT 1",
                 [id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
@@ -361,7 +512,7 @@ fn write_archive(conn: &Connection, paths: &AppPaths, sealer: &Sealer, course_id
             }
         }
         let mark: Option<(f64, f64, String, String)> = conn
-            .query_row("SELECT percent, late_penalty, breakdown, marker FROM marks WHERE item_id=?1 ORDER BY marked_at DESC LIMIT 1", [id], |r| {
+            .query_row("SELECT percent, late_penalty, breakdown, marker FROM marks WHERE item_id=?1 ORDER BY marked_at DESC, rowid DESC LIMIT 1", [id], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })
             .optional()

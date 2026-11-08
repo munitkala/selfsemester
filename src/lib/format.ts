@@ -50,6 +50,7 @@ export const stateLabel: Record<string, string> = {
 };
 
 export const statusLabel: Record<string, string> = {
+  draft: "Draft in the course builder",
   intake: "Writing questions",
   answering: "Answer questions",
   scoping: "Planning",

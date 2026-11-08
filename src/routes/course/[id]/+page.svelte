@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, live, type CourseView, type LatePolicy } from "$lib/api";
+  import { api, live, type CourseView, type LatePolicy, type Strictness } from "$lib/api";
+  import StrictnessChoice from "$lib/StrictnessChoice.svelte";
   import ItemList from "$lib/ItemList.svelte";
   import Materials from "$lib/Materials.svelte";
   import ProgressBar from "$lib/Progress.svelte";
@@ -20,6 +21,7 @@
   let perDay = $state(10);
   let maxDays = $state(3);
   let onTranscript = $state(true);
+  let strictness = $state<Strictness>("structured");
   let confirmDelete = $state(false);
 
   $effect(() => {
@@ -55,7 +57,7 @@
   function approve(e: Event) {
     e.preventDefault();
     const policy: LatePolicy = lateKind === "lock_zero" ? { kind: "lock_zero" } : { kind: "penalty", per_day: perDay, max_days: maxDays };
-    act(() => api.approve(id, startDate, policy, onTranscript));
+    act(() => api.approve(id, startDate, policy, strictness, onTranscript));
   }
 
   async function remove() {
@@ -82,6 +84,8 @@
           · {day(c.starts_at)} – {day(c.ends_at)}
         {/if}
         {#if c.mode === "online"} · <span class="warn">needs internet</span>{/if}
+        {#if c.strictness === "sandbox"} · <span class="pill">Sandbox</span>{/if}
+        {#if c.origin === "manual"} · <span class="pill">Written by you</span>{/if}
       </p>
     </div>
     {#if c.status === "active" || c.status === "completed"}
@@ -116,8 +120,15 @@
     <ProgressBar p={c.progress} />
   {/if}
 
+  <!-- 0. A course still being written in the course builder -->
+  {#if c.status === "draft"}
+    <section class="card">
+      <p>This course is a draft in the course builder.</p>
+      <a class="button" href="/build/{encodeURIComponent(id)}">Open it in the course builder</a>
+    </section>
+
   <!-- 1. Intake -->
-  {#if c.status === "intake"}
+  {:else if c.status === "intake"}
     <section class="card"><p>Claude is reading your request and writing a few questions about your goals and level.</p></section>
   {:else if c.status === "answering" && c.questions}
     <form class="card" onsubmit={submitAnswers}>
@@ -243,6 +254,7 @@
           </div>
         {/if}
       </fieldset>
+      <StrictnessChoice bind:value={strictness} />
       <label class="radio"><input type="checkbox" bind:checked={onTranscript} /> Put the final mark on my transcript</label>
       <p class="small muted">Approving builds the whole course now: Claude finds free sources, then writes and checks every unit. This uses a fair amount of your plan's usage; if a limit is hit, it pauses and continues later.</p>
       <button type="submit" disabled={busy}>Approve and build the course</button>

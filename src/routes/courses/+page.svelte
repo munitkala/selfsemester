@@ -31,7 +31,7 @@
 {#if courses}
   <div class="grid">
     {#each courses as c (c.id)}
-      <a class="card course" href="/course/{encodeURIComponent(c.id)}">
+      <a class="card course" href={c.status === "draft" ? `/build/${encodeURIComponent(c.id)}` : `/course/${encodeURIComponent(c.id)}`}>
         <div class="spread">
           <h2>{c.title}</h2>
           {#if c.mode === "online"}<span class="pill">Needs internet</span>{/if}

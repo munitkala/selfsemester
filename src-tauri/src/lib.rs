@@ -5,7 +5,7 @@ pub mod paths;
 pub mod worker;
 
 use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
-use course::{marking, materials, pipeline, schedule::LatePolicy, seal::Sealer};
+use course::{builder, marking, materials, pipeline, review, schedule::LatePolicy, schedule::Strictness, seal::Sealer};
 use paths::AppPaths;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -179,10 +179,11 @@ fn approve_course(
     id: String,
     start_date: String,
     late_policy: LatePolicy,
+    strictness: Strictness,
     on_transcript: bool,
 ) -> Res<()> {
     let start = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").map_err(|_| "Pick a valid start date.")?;
-    pipeline::approve(&state.db.lock().unwrap(), &id, start, &late_policy, on_transcript)?;
+    pipeline::approve(&state.db.lock().unwrap(), &id, start, &late_policy, strictness, on_transcript)?;
     changed(&app);
     Ok(())
 }
@@ -272,6 +273,88 @@ fn submit_item(
     Ok(out)
 }
 
+/// Manual courses: the learner marks their own submitted work, one number per self-mark line.
+#[tauri::command]
+fn self_mark_item(app: AppHandle, state: tauri::State<'_, AppState>, id: String, awarded: Vec<f64>, comment: String) -> Res<()> {
+    marking::self_mark(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, &awarded, &comment)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Sandbox: show the answer key. Ends the attempts on that item.
+#[tauri::command]
+fn reveal_answer_key(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    marking::reveal_key(&state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Review mode: ask Claude about a marked item.
+#[tauri::command]
+fn send_review_message(app: AppHandle, state: tauri::State<'_, AppState>, id: String, text: String) -> Res<()> {
+    review::send(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, &text)?;
+    changed(&app);
+    Ok(())
+}
+
+// ---------- course builder (no Claude) ----------
+
+#[tauri::command]
+fn builder_create(app: AppHandle, state: tauri::State<'_, AppState>, title: String) -> Res<String> {
+    let id = builder::create(&state.db.lock().unwrap(), &title)?;
+    changed(&app);
+    Ok(id)
+}
+
+#[derive(Serialize)]
+struct DraftView {
+    draft: builder::Draft,
+    problems: Vec<String>,
+}
+
+#[tauri::command]
+fn builder_get(state: tauri::State<'_, AppState>, id: String) -> Res<DraftView> {
+    let draft = builder::get(&state.db.lock().unwrap(), &id)?;
+    let problems = builder::problems(&draft);
+    Ok(DraftView { draft, problems })
+}
+
+/// Save the draft; returns what still stops it from being published.
+#[tauri::command]
+fn builder_save(state: tauri::State<'_, AppState>, id: String, draft: builder::Draft) -> Res<Vec<String>> {
+    builder::save(&state.db.lock().unwrap(), &id, &draft)?;
+    Ok(builder::problems(&draft))
+}
+
+#[tauri::command]
+fn builder_publish(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    start_date: String,
+    late_policy: LatePolicy,
+    strictness: Strictness,
+    on_transcript: bool,
+) -> Res<()> {
+    let start = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").map_err(|_| "Pick a valid start date.")?;
+    builder::publish(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, start, &late_policy, strictness, on_transcript)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Write the draft to a folder in Documents and return its path.
+#[tauri::command]
+fn builder_export(state: tauri::State<'_, AppState>, id: String) -> Res<String> {
+    Ok(builder::export(&state.db.lock().unwrap(), &state.paths, &id)?.display().to_string())
+}
+
+#[tauri::command]
+fn builder_import(app: AppHandle, state: tauri::State<'_, AppState>, folder: String) -> Res<String> {
+    let id = builder::import(&state.db.lock().unwrap(), std::path::Path::new(&folder))?;
+    changed(&app);
+    Ok(id)
+}
+
 #[tauri::command]
 fn get_transcript(state: tauri::State<'_, AppState>) -> Res<course::TranscriptView> {
     course::transcript(&state.db.lock().unwrap())
@@ -333,6 +416,15 @@ pub fn run() {
             get_item,
             mark_lesson_read,
             submit_item,
+            self_mark_item,
+            reveal_answer_key,
+            send_review_message,
+            builder_create,
+            builder_get,
+            builder_save,
+            builder_publish,
+            builder_export,
+            builder_import,
             get_transcript,
             open_folder
         ])

@@ -36,6 +36,37 @@ impl LatePolicy {
     }
 }
 
+/// How strictly a course treats attempts and deadlines. Chosen per course when enrolling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Strictness {
+    /// One attempt per item, strict marking, the late policy applies.
+    Structured,
+    /// Resubmit as often as you like with no late penalty. An item closes when you reveal its answer key, and late
+    /// work is taken until SANDBOX_GRACE after the course's last deadline.
+    Sandbox,
+}
+
+impl Strictness {
+    pub fn parse(s: &str) -> Self {
+        if s == "sandbox" { Strictness::Sandbox } else { Strictness::Structured }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Strictness::Structured => "structured",
+            Strictness::Sandbox => "sandbox",
+        }
+    }
+}
+
+/// How long a sandbox course keeps taking work after its last deadline.
+pub const SANDBOX_GRACE_DAYS: i64 = 7;
+
+/// When a sandbox course stops taking work: a week after its last deadline.
+pub fn sandbox_closes(ends_at: Option<&str>) -> Option<DateTime<Utc>> {
+    ends_at.and_then(parse_ts).map(|t| t + Duration::days(SANDBOX_GRACE_DAYS))
+}
+
 /// Started days late (0 if on time).
 pub fn late_days(due: DateTime<Utc>, at: DateTime<Utc>) -> i64 {
     if at <= due { 0 } else { ((at - due).num_seconds() + 86_399) / 86_400 }
@@ -212,15 +243,22 @@ pub fn tick(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Vec<Notic
 
     // 2. Missed deadlines and 3. reminders, per open graded item.
     let mut st = conn.prepare(
-        "SELECT i.id, i.title, i.due_at, c.late_policy, c.title FROM items i JOIN courses c ON c.id = i.course_id
+        "SELECT i.id, i.title, i.due_at, c.late_policy, c.title, c.strictness, c.ends_at FROM items i
+         JOIN courses c ON c.id = i.course_id
          WHERE i.state='open' AND i.due_at IS NOT NULL AND c.status='active'",
     )?;
-    let open: Vec<(String, String, String, String, String)> =
-        st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?.collect::<Result<_, _>>()?;
-    for (id, title, due_s, policy, course) in open {
+    #[allow(clippy::type_complexity)]
+    let open: Vec<(String, String, String, String, String, String, Option<String>)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, title, due_s, policy, course, strictness, ends_at) in open {
         let Some(due) = parse_ts(&due_s) else { continue };
-        let policy = LatePolicy::parse(&policy);
-        if now > due + policy.grace() {
+        // a sandbox item only locks once the whole course stops taking work
+        let locks_at = match Strictness::parse(&strictness) {
+            Strictness::Structured => due + LatePolicy::parse(&policy).grace(),
+            Strictness::Sandbox => sandbox_closes(ends_at.as_deref()).unwrap_or(due).max(due),
+        };
+        if now > locks_at {
             conn.execute("UPDATE items SET state='missed' WHERE id=?1", [&id])?;
             conn.execute(
                 "INSERT INTO marks(id, item_id, raw_percent, percent, breakdown, marker, marked_at)
@@ -241,15 +279,35 @@ pub fn tick(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Vec<Notic
 
 /// When work submitted now would count, and how late it is. Err with a reason if it can't be accepted.
 pub fn submission_window(conn: &Connection, item_id: &str, now: DateTime<Utc>) -> Result<i64, String> {
-    let row: Option<(String, Option<String>, String)> = conn
+    #[allow(clippy::type_complexity)]
+    let row: Option<(String, Option<String>, String, String, String, Option<String>, bool)> = conn
         .query_row(
-            "SELECT i.state, i.due_at, c.late_policy FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1",
+            "SELECT i.state, i.due_at, c.late_policy, c.status, c.strictness, c.ends_at, i.key_revealed
+             FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1",
             [item_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    let (state, due, policy) = row.ok_or("No such item.")?;
+    let (state, due, policy, course_status, strictness, ends_at, revealed) = row.ok_or("No such item.")?;
+    if course_status != "active" {
+        return Err("This course isn't running, so it can't take submissions.".into());
+    }
+    if Strictness::parse(&strictness) == Strictness::Sandbox {
+        match state.as_str() {
+            "open" => {}
+            "marked" if revealed => return Err("You revealed the answer key, so this item is closed.".into()),
+            "marked" => {}
+            "submitted" => return Err("Wait until your last attempt is marked, then try again.".into()),
+            "locked" => return Err("This item hasn't been released yet.".into()),
+            _ => return Err("The course has stopped taking work for this item.".into()),
+        }
+        if sandbox_closes(ends_at.as_deref()).is_some_and(|close| now > close) {
+            return Err("This sandbox course stopped taking work a week after its last deadline.".into());
+        }
+        // late days are still recorded, they just cost nothing
+        return Ok(due.as_deref().and_then(parse_ts).map_or(0, |d| late_days(d, now)));
+    }
     if state != "open" {
         return Err(match state.as_str() {
             "locked" => "This item hasn't been released yet.",

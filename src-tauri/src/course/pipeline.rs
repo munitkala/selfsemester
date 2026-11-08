@@ -32,7 +32,7 @@ pub fn default_profile(conn: &Connection) -> Result<String, String> {
     Ok("me".into())
 }
 
-fn course_id_for(subject: &str) -> String {
+pub(crate) fn course_id_for(subject: &str) -> String {
     let slug: String = subject
         .to_lowercase()
         .chars()
@@ -103,10 +103,18 @@ pub fn plan_of(conn: &Connection, id: &str) -> Result<Plan, String> {
 }
 
 /// Step 3: the learner accepted the readiness report. Compile everything: sources, then units.
-pub fn approve(conn: &Connection, id: &str, start: NaiveDate, late_policy: &schedule::LatePolicy, on_transcript: bool) -> Result<(), String> {
+pub fn approve(
+    conn: &Connection,
+    id: &str,
+    start: NaiveDate,
+    late_policy: &schedule::LatePolicy,
+    strictness: schedule::Strictness,
+    on_transcript: bool,
+) -> Result<(), String> {
     let plan = plan_of(conn, id)?;
     conn.execute(
-        "UPDATE courses SET title=?2, mode=?3, late_policy=?4, on_transcript=?5, readiness_json=?6, starts_at=?7 WHERE id=?1",
+        "UPDATE courses SET title=?2, mode=?3, late_policy=?4, on_transcript=?5, readiness_json=?6, starts_at=?7, strictness=?8
+         WHERE id=?1",
         params![
             id,
             plan.title,
@@ -114,7 +122,8 @@ pub fn approve(conn: &Connection, id: &str, start: NaiveDate, late_policy: &sche
             serde_json::to_string(late_policy).unwrap(),
             on_transcript,
             serde_json::to_string(&plan.readiness).unwrap(),
-            start.to_string()
+            start.to_string(),
+            strictness.as_str()
         ],
     )
     .map_err(io)?;
@@ -234,6 +243,10 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
                 return seal_and_start(conn, paths, sealer, &id).map(Some);
             }
         }
+        "review" => {
+            let item = unit_key.ok_or("review job without item")?;
+            super::review::on_done(conn, &item, &value)?;
+        }
         "mark" => {
             let sub = unit_key.ok_or("mark job without submission")?;
             let item = super::marking::on_mark_done(conn, &sub, &value, model)?;
@@ -246,7 +259,7 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
 }
 
 /// Every unit is generated and checked: build the schedule and start the course.
-fn seal_and_start(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> Result<schedule::Notice, String> {
+pub(crate) fn seal_and_start(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> Result<schedule::Notice, String> {
     let plan = plan_of(conn, id)?;
     let start_s: String = conn.query_row("SELECT starts_at FROM courses WHERE id=?1", [id], |r| r.get(0)).map_err(io)?;
     let start = NaiveDate::parse_from_str(&start_s[..10.min(start_s.len())], "%Y-%m-%d").map_err(|e| e.to_string())?;
@@ -257,9 +270,16 @@ fn seal_and_start(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str
 
 /// A job gave up. Record why on the course (or leave the submission waiting, for marking).
 pub fn on_job_failed(conn: &Connection, job_id: i64) -> Result<(), String> {
-    let (course, kind, _) = jobs::owner(conn, job_id).map_err(io)?;
+    let (course, kind, unit_key) = jobs::owner(conn, job_id).map_err(io)?;
     let Some(id) = course else { return Ok(()) };
     let err: Option<String> = conn.query_row("SELECT error FROM jobs WHERE id=?1", [job_id], |r| r.get(0)).map_err(io)?;
+    // a review reply that failed only concerns that conversation, not the whole course
+    if kind == "review" {
+        if let Some(item) = unit_key {
+            super::review::on_failed(conn, &item, err.as_deref().unwrap_or("unknown error"))?;
+        }
+        return Ok(());
+    }
     conn.execute(
         "UPDATE courses SET error=?2, updated_at=?3 WHERE id=?1",
         params![id, format!("{kind} step failed: {}", err.unwrap_or_default()), db::now_utc()],
@@ -297,7 +317,7 @@ pub fn delete(conn: &Connection, paths: &AppPaths, id: &str) -> Result<(), Strin
 mod tests {
     use super::*;
     use crate::course::marking;
-    use crate::course::schedule::{LatePolicy, tick};
+    use crate::course::schedule::{LatePolicy, Strictness, tick};
     use chrono::{Duration, Utc};
     use serde_json::json;
 
@@ -354,7 +374,7 @@ mod tests {
         assert_eq!(status(&conn, &id), "review");
 
         let start = (Utc::now() - Duration::days(1)).date_naive();
-        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, true).unwrap();
+        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true).unwrap();
         assert_eq!(status(&conn, &id), "compiling");
         answer(&conn, &paths, &sealer, json!({"sources":[{"url":"https://openstax.org/x","title":"OpenStax","licence":"CC BY 4.0",
             "attribution":"OpenStax","free":true,"unit_keys":["u01","u02"],"note":""}]}));
@@ -446,7 +466,7 @@ mod tests {
         answer(&conn, &paths, &sealer, intake.clone());
         answer_intake(&conn, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, plan.clone());
-        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, true).unwrap();
+        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true).unwrap();
         answer(&conn, &paths, &sealer, sources.clone());
         answer(&conn, &paths, &sealer, unit.clone());
         drop(conn);
@@ -460,7 +480,7 @@ mod tests {
         answer_intake(&conn, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, one_unit);
         let start = (Utc::now() - Duration::days(1)).date_naive();
-        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, true).unwrap();
+        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true).unwrap();
         answer(&conn, &paths, &sealer, sources);
         answer(&conn, &paths, &sealer, unit.clone());
         answer(&conn, &paths, &sealer, json!({"ok": true, "issues": [{"item_key":"u01-assign","question_id":"a2",

@@ -45,6 +45,8 @@
   <p class="small muted">This uses your Claude plan's usage. Nothing is built until you approve the plan.</p>
 </form>
 
+<p class="small muted">Rather write the course yourself, without Claude? Use the <a href="/build">course builder</a>.</p>
+
 <style>
   .examples {
     margin-top: 0.5rem;

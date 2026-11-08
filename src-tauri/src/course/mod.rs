@@ -1,10 +1,12 @@
 //! Courses: the compile pipeline, schedule, marking, and the read models the UI shows.
 
+pub mod builder;
 pub mod marking;
 pub mod materials;
 pub mod pipeline;
 pub mod progress;
 pub mod prompts;
+pub mod review;
 pub mod schedule;
 pub mod seal;
 pub mod types;
@@ -125,7 +127,7 @@ pub struct ItemRow {
 }
 
 const ITEM_COLS: &str = "i.id, i.course_id, c.title, u.title, i.kind, i.title, i.module, i.weight, i.release_at, i.due_at, i.state,
-    (SELECT m.percent FROM marks m WHERE m.item_id=i.id ORDER BY m.marked_at DESC LIMIT 1)";
+    (SELECT m.percent FROM marks m WHERE m.item_id=i.id ORDER BY m.marked_at DESC, m.rowid DESC LIMIT 1)";
 
 fn item_rows(conn: &Connection, where_sql: &str, p: &[&dyn rusqlite::ToSql]) -> Result<Vec<ItemRow>, String> {
     let sql = format!(
@@ -187,13 +189,15 @@ pub struct CourseView {
     pub sources: Vec<Value>,
     pub archive_dir: Option<String>,
     pub progress: Option<progress::Progress>,
+    pub strictness: String,
+    pub origin: String,
 }
 
 pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView, String> {
     let mut v = conn
         .query_row(
             "SELECT id, title, subject, status, error, mode, late_policy, on_transcript, questions_json, intake_json, plan_json,
-                    bundle_choice, starts_at, ends_at, final_percent
+                    bundle_choice, starts_at, ends_at, final_percent, strictness, origin
              FROM courses WHERE id=?1",
             [id],
             |r| {
@@ -219,6 +223,8 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     sources: vec![],
                     archive_dir: None,
                     progress: None,
+                    strictness: r.get(15)?,
+                    origin: r.get(16)?,
                 })
             },
         )
@@ -308,17 +314,34 @@ pub struct ItemView {
     pub answer_key: Option<Value>,
     pub marking_status: Option<String>,
     pub marking_progress: Option<progress::Progress>,
+    /// structured | sandbox
+    pub strictness: String,
+    /// claude | manual (written in the course builder, self-marked)
+    pub origin: String,
+    /// Submissions made so far (sandbox courses allow several).
+    pub attempts: i64,
+    /// Sandbox: the learner has seen the answer key, so the item is closed.
+    pub key_revealed: bool,
+    /// Sandbox: another attempt can be submitted now.
+    pub can_resubmit: bool,
+    /// Manual courses: the lines the learner marks their own work on, once it's submitted.
+    pub self_mark: Option<Vec<Value>>,
+    /// Review mode, once the item is marked or missed.
+    pub review: Option<review::Thread>,
 }
 
 pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> Result<ItemView, String> {
     let row = item_rows(conn, "i.id = ?1", &[&id])?.into_iter().next().ok_or("No such item.")?;
-    let (content_ref, key_ref, points, policy): (String, Option<String>, f64, String) = conn
+    #[allow(clippy::type_complexity)]
+    let (content_ref, key_ref, points, policy, strictness, origin, key_revealed): (String, Option<String>, f64, String, String, String, bool) = conn
         .query_row(
-            "SELECT i.content_ref, i.key_ref, i.points, c.late_policy FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1",
+            "SELECT i.content_ref, i.key_ref, i.points, c.late_policy, c.strictness, c.origin, i.key_revealed
+             FROM items i JOIN courses c ON c.id=i.course_id WHERE i.id=?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
         )
         .map_err(io)?;
+    let sandbox = schedule::Strictness::parse(&strictness) == schedule::Strictness::Sandbox;
     let dir = paths.course_dir(&row.course_id);
     let released = row.state != "locked";
     let (mut lesson, mut content) = (None, None);
@@ -331,19 +354,21 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
     }
     let submission: Option<Value> = conn
         .query_row(
-            "SELECT id, submitted_at, text_answer, answers_json, files_json, late_days FROM submissions WHERE item_id=?1 ORDER BY submitted_at DESC LIMIT 1",
+            "SELECT id, submitted_at, text_answer, answers_json, files_json, late_days, instant_json FROM submissions
+             WHERE item_id=?1 ORDER BY submitted_at DESC, rowid DESC LIMIT 1",
             [id],
             |r| {
                 Ok(serde_json::json!({"id": r.get::<_, String>(0)?, "submitted_at": r.get::<_, String>(1)?,
                     "text_answer": r.get::<_, Option<String>>(2)?, "answers": json_col(r.get(3)?),
-                    "files": json_col(r.get(4)?), "late_days": r.get::<_, i64>(5)?}))
+                    "files": json_col(r.get(4)?), "late_days": r.get::<_, i64>(5)?, "instant": json_col(r.get(6)?)}))
             },
         )
         .optional()
         .map_err(io)?;
     let mark: Option<Value> = conn
         .query_row(
-            "SELECT raw_percent, percent, late_penalty, breakdown, marker, marked_at FROM marks WHERE item_id=?1 ORDER BY marked_at DESC LIMIT 1",
+            "SELECT raw_percent, percent, late_penalty, breakdown, marker, marked_at FROM marks WHERE item_id=?1
+             ORDER BY marked_at DESC, rowid DESC LIMIT 1",
             [id],
             |r| {
                 Ok(serde_json::json!({"raw_percent": r.get::<_, f64>(0)?, "percent": r.get::<_, f64>(1)?, "late_penalty": r.get::<_, f64>(2)?,
@@ -352,7 +377,15 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         )
         .optional()
         .map_err(io)?;
-    let answer_key = if row.state == "marked" || row.state == "missed" {
+    // Structured: the key opens once the item is marked. Sandbox: only when the learner chooses to see it (that ends
+    // their attempts) or the item locked. Self-marked courses: as soon as there's work to mark against it.
+    let key_open = match row.state.as_str() {
+        "missed" => true,
+        "marked" => !sandbox || key_revealed,
+        "submitted" => origin == "manual",
+        _ => false,
+    };
+    let answer_key = if key_open {
         key_ref.and_then(|k| sealer.read_json::<types::ItemKey>(&dir.join(k)).ok()).map(|k| serde_json::to_value(k.answer_key).unwrap())
     } else {
         None
@@ -374,6 +407,18 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         (Some(s), "submitted") => progress::marking(conn, s["id"].as_str().unwrap_or_default(), chrono::Utc::now()).map_err(io)?,
         _ => None,
     };
+    let attempts: i64 = conn.query_row("SELECT count(*) FROM submissions WHERE item_id=?1", [id], |r| r.get(0)).map_err(io)?;
+    let can_resubmit = sandbox && row.state == "marked" && !key_revealed && schedule::submission_window(conn, id, chrono::Utc::now()).is_ok();
+    let self_mark = match (&content, row.state.as_str()) {
+        (Some(c), "submitted") if origin == "manual" => Some(
+            marking::self_mark_slots(c)
+                .into_iter()
+                .map(|(criterion, points, auto)| serde_json::json!({"criterion": criterion, "points": points, "auto": auto}))
+                .collect(),
+        ),
+        _ => None,
+    };
+    let review = if matches!(row.state.as_str(), "marked" | "missed") && row.kind != "lesson" { Some(review::thread(conn, id)?) } else { None };
     Ok(ItemView {
         item: row,
         points,
@@ -385,6 +430,13 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         answer_key,
         marking_status,
         marking_progress,
+        strictness,
+        origin,
+        attempts,
+        key_revealed,
+        can_resubmit,
+        self_mark,
+        review,
     })
 }
 
@@ -397,14 +449,18 @@ pub struct TranscriptView {
 
 pub fn transcript(conn: &Connection) -> Result<TranscriptView, String> {
     let mut st = conn
-        .prepare("SELECT course_id, title, started_on, finished_on, final_percent, letter, breakdown FROM transcript_entries ORDER BY finished_on")
+        .prepare(
+            "SELECT course_id, title, started_on, finished_on, final_percent, letter, breakdown,
+                    coalesce((SELECT strictness FROM courses c WHERE c.id = t.course_id), 'structured')
+             FROM transcript_entries t ORDER BY finished_on",
+        )
         .map_err(io)?;
     let entries: Vec<Value> = st
         .query_map([], |r| {
             let pct: f64 = r.get(4)?;
             Ok(serde_json::json!({"course_id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "started_on": r.get::<_, String>(2)?,
                 "finished_on": r.get::<_, String>(3)?, "final_percent": pct, "letter": r.get::<_, String>(5)?,
-                "gpa": marking::letter(pct).1, "breakdown": json_col(r.get(6)?)}))
+                "gpa": marking::letter(pct).1, "breakdown": json_col(r.get(6)?), "sandbox": r.get::<_, String>(7)? == "sandbox"}))
         })
         .map_err(io)?
         .collect::<Result<_, _>>()

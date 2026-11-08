@@ -64,7 +64,7 @@ pub struct PlanUnit {
 }
 
 /// Share of the final grade per assessment kind. Normalised to sum to 1 when the schedule is built.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Weights {
     pub homework: f64,
     pub assignment: f64,
@@ -130,7 +130,7 @@ pub struct Lesson {
     pub sources_used: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GenItem {
     pub key: String,
     /// homework | assignment | quiz | test | exam | project
@@ -146,7 +146,7 @@ pub struct GenItem {
     pub due_days: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Question {
     pub id: String,
     pub prompt: String,
@@ -157,14 +157,14 @@ pub struct Question {
     pub points: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RubricLine {
     pub criterion: String,
     pub points: f64,
     pub description: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KeyEntry {
     pub question_id: String,
     /// For mcq: the exact option text. For numeric: the number as text.
