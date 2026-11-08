@@ -1,6 +1,7 @@
 //! Courses: the compile pipeline, schedule, marking, and the read models the UI shows.
 
 pub mod marking;
+pub mod materials;
 pub mod pipeline;
 pub mod progress;
 pub mod prompts;

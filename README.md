@@ -62,16 +62,19 @@ To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio
   Claude's own words and link to their sources; keep generated courses for your own study.
 - **Supported work types today:** typed answers (Markdown and LaTeX), photo or PDF uploads, and auto-marked quizzes.
   Courses that would need audio, camera or code-running checks are planned without those parts for now.
+- **Your own materials:** each course page has a "Your materials" section where you can add reference files (PDFs,
+  text, notes, code), images and typed notes. Claude reads them when it plans the course, writes each unit and marks
+  your work, so add them before you approve a course if you want every unit to use them.
 
 ## Privacy
 
 Everything stays on your computer. The app has no server and no account system. The only thing that talks to the
-internet is your Claude Code, which sends course prompts and your submitted work to Anthropic to generate and mark
-courses, under your agreement with Anthropic. SelfSemester never reads, stores or sends your Claude sign-in.
+internet is your Claude Code, which sends course prompts, your course materials and your submitted work to Anthropic
+to generate and mark courses, under your agreement with Anthropic. SelfSemester never reads, stores or sends your Claude sign-in.
 
 | Folder | Contents |
 | --- | --- |
-| `%LOCALAPPDATA%\SelfSemester` | Database, course files, sealed answer keys, submissions |
+| `%LOCALAPPDATA%\SelfSemester` | Database, course files, sealed answer keys, submissions, your course materials |
 | `Documents\SelfSemester\Completed` | Archives of finished courses: summary, lesson notes, your work, feedback, reference list |
 
 ## Legal and responsible use
@@ -141,13 +144,14 @@ src-tauri/src/
     pipeline.rs           intake -> plan -> sources -> units -> check -> schedule
     schedule.rs           release dates, deadlines, late policy
     marking.rs            submissions, auto-marking, grades, transcript, archive
+    materials.rs          your own reference files, images and notes for a course
     seal.rs               encrypted answer keys and exams
   db/                     SQLite schema, migrations, job queue
   worker.rs               background thread: runs one Claude job at a time and ticks the clock
 ```
 
 Every call to Claude is a row in a job queue, so work survives crashes and usage limits. Each call runs in an empty
-folder with no tools (unless the stage needs web search or must read an upload), no MCP servers and none of the
+folder with no tools (unless the stage needs web search or must read an upload or your course materials), no MCP servers and none of the
 user's Claude Code settings, which keeps calls small and predictable.
 
 ## Not built yet

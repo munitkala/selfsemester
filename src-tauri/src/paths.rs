@@ -81,7 +81,7 @@ impl AppPaths {
     /// Per-course folder layout (see docs/RESEARCH.md "Storage").
     pub fn ensure_course(&self, course_id: &str) -> io::Result<PathBuf> {
         let root = self.course_dir(course_id);
-        for sub in ["units", "sealed", "sources", "submissions"] {
+        for sub in ["units", "sealed", "sources", "submissions", "materials"] {
             std::fs::create_dir_all(root.join(sub))?;
         }
         Ok(root)

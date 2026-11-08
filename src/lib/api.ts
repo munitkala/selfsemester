@@ -103,6 +103,8 @@ export type CourseView = {
   progress: Progress | null;
 };
 
+export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
+
 export type Question = { id: string; prompt: string; type: "mcq" | "numeric" | "short" | "long"; options: string[]; points: number };
 export type RubricLine = { criterion: string; points: number; description: string };
 export type MarkLine = { criterion: string; awarded: number; possible: number; comment: string };
@@ -166,6 +168,11 @@ export const api = {
     invoke<void>("approve_course", { id, startDate, latePolicy, onTranscript }),
   retry: (id: string) => invoke<number>("retry_course", { id }),
   remove: (id: string) => invoke<void>("delete_course", { id }),
+  materials: (courseId: string) => invoke<Material[]>("list_materials", { courseId }),
+  addMaterials: (courseId: string, files: string[]) => invoke<number>("add_materials", { courseId, files }),
+  addNote: (courseId: string, title: string, text: string) => invoke<void>("add_material_note", { courseId, title, text }),
+  removeMaterial: (id: string) => invoke<void>("remove_material", { id }),
+  openMaterial: (id: string) => invoke<void>("open_material", { id }),
   today: () => invoke<Today>("today"),
   item: (id: string) => invoke<ItemView>("get_item", { id }),
   markRead: (id: string) => invoke<void>("mark_lesson_read", { id }),

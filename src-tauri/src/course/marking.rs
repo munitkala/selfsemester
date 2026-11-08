@@ -154,7 +154,8 @@ pub fn submit(
 
     let course_title: String = conn.query_row("SELECT title FROM courses WHERE id=?1", [&it.course_id], |r| r.get(0)).map_err(io)?;
     let final_exam = it.kind == "exam" && public.title.to_lowercase().contains("final");
-    let req = super::prompts::mark(&course_title, &public, &key, text_answer, answers, &stored, final_exam);
+    let mut req = super::prompts::mark(&course_title, &public, &key, text_answer, answers, &stored, final_exam);
+    super::materials::attach(conn, &it.course_id, &mut req, super::materials::Use::Mark)?;
     jobs::enqueue_with(conn, Some(&it.course_id), "mark", Some(&sub_id), jobs::PRIORITY_MARKING, &req).map_err(io)?;
     Ok(SubmitOutcome { submission_id: sub_id, status: "queued".into(), late_days: late })
 }

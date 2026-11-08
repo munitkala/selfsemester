@@ -3,6 +3,7 @@
 //!   intake -> answering -> scoping -> review -> compiling -> active -> completed
 //! A failed stage leaves the status alone and sets `courses.error`; `retry` re-queues it.
 
+use super::materials;
 use super::prompts;
 use super::schedule;
 use super::seal::Sealer;
@@ -75,8 +76,9 @@ fn queue_plan(conn: &Connection, id: &str) -> Result<(), String> {
     let (subject, notes, answers, bundle) = course_text(conn, id)?;
     let answers: Value = answers.and_then(|a| serde_json::from_str(&a).ok()).unwrap_or(Value::Null);
     set_status(conn, id, "scoping")?;
-    jobs::enqueue_with(conn, Some(id), "plan", None, jobs::PRIORITY_INTERACTIVE, &prompts::plan(&subject, &notes, &answers, bundle.as_deref()))
-        .map_err(io)?;
+    let mut req = prompts::plan(&subject, &notes, &answers, bundle.as_deref());
+    materials::attach(conn, id, &mut req, materials::Use::Plan)?;
+    jobs::enqueue_with(conn, Some(id), "plan", None, jobs::PRIORITY_INTERACTIVE, &req).map_err(io)?;
     Ok(())
 }
 
@@ -190,7 +192,9 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             let plan = plan_of(conn, &id)?;
             let srcs = sources_of(conn, &id)?;
             for u in &plan.units {
-                jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &prompts::unit(&plan, &srcs, &u.key, None)).map_err(io)?;
+                let mut req = prompts::unit(&plan, &srcs, &u.key, None);
+                materials::attach(conn, &id, &mut req, materials::Use::Write)?;
+                jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
             }
         }
         "unit" => {
@@ -211,8 +215,9 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
                 let plan = plan_of(conn, &id)?;
                 let srcs = sources_of(conn, &id)?;
                 let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
-                jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &prompts::unit(&plan, &srcs, &key, Some(&fb)))
-                    .map_err(io)?;
+                let mut req = prompts::unit(&plan, &srcs, &key, Some(&fb));
+                materials::attach(conn, &id, &mut req, materials::Use::Write)?;
+                jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
                 conn.execute("UPDATE units SET state='pending' WHERE course_id=?1 AND unit_key=?2", params![id, key]).map_err(io)?;
                 return Ok(None);
             }

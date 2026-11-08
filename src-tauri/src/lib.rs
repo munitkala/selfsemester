@@ -5,7 +5,7 @@ pub mod paths;
 pub mod worker;
 
 use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
-use course::{marking, pipeline, schedule::LatePolicy, seal::Sealer};
+use course::{marking, materials, pipeline, schedule::LatePolicy, seal::Sealer};
 use paths::AppPaths;
 use rusqlite::Connection;
 use serde::Serialize;
@@ -206,6 +206,43 @@ fn today(state: tauri::State<'_, AppState>) -> Res<course::Today> {
     course::today(&state.db.lock().unwrap())
 }
 
+// ---------- the learner's own materials ----------
+
+#[tauri::command]
+fn list_materials(state: tauri::State<'_, AppState>, course_id: String) -> Res<Vec<materials::Material>> {
+    materials::list(&state.db.lock().unwrap(), &course_id)
+}
+
+#[tauri::command]
+fn add_materials(app: AppHandle, state: tauri::State<'_, AppState>, course_id: String, files: Vec<String>) -> Res<usize> {
+    let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
+    let n = materials::add_files(&state.db.lock().unwrap(), &state.paths, &course_id, &files)?;
+    changed(&app);
+    Ok(n)
+}
+
+#[tauri::command]
+fn add_material_note(app: AppHandle, state: tauri::State<'_, AppState>, course_id: String, title: String, text: String) -> Res<()> {
+    materials::add_note(&state.db.lock().unwrap(), &state.paths, &course_id, &title, &text)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn remove_material(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    materials::remove(&state.db.lock().unwrap(), &state.paths, &id)?;
+    changed(&app);
+    Ok(())
+}
+
+/// Open a material's copy in its default app (PDF viewer, image viewer, editor).
+#[tauri::command]
+fn open_material(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = materials::file_of(&state.db.lock().unwrap(), &state.paths, &id)?;
+    app.opener().open_path(path.display().to_string(), None::<&str>).map_err(err)
+}
+
 // ---------- items ----------
 
 #[tauri::command]
@@ -287,6 +324,11 @@ pub fn run() {
             approve_course,
             retry_course,
             delete_course,
+            list_materials,
+            add_materials,
+            add_material_note,
+            remove_material,
+            open_material,
             today,
             get_item,
             mark_lesson_read,

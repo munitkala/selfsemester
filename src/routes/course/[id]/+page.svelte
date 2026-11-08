@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import { api, live, type CourseView, type LatePolicy } from "$lib/api";
   import ItemList from "$lib/ItemList.svelte";
+  import Materials from "$lib/Materials.svelte";
   import ProgressBar from "$lib/Progress.svelte";
   import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "$lib/format";
 
@@ -287,6 +288,8 @@
       </details>
     {/if}
   {/if}
+
+  <Materials courseId={id} status={c.status} />
 
   {#if c.sources.length && c.status !== "compiling"}
     <details class="card">
