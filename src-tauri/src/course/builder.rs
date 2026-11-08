@@ -33,6 +33,9 @@ pub struct Draft {
     pub summary: String,
     pub weights: Weights,
     pub units: Vec<DraftUnit>,
+    /// Code, term, instructor, colour, welcome and outcomes. `objectives` here is unused: each unit keeps its own.
+    #[serde(default)]
+    pub meta: CourseMeta,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -40,6 +43,9 @@ pub struct DraftUnit {
     pub title: String,
     pub week: u32,
     pub topics: Vec<String>,
+    /// "By the end of this unit you can..."
+    #[serde(default)]
+    pub objectives: Vec<String>,
     pub lesson_title: String,
     /// Markdown, with $...$ LaTeX.
     pub lesson: String,
@@ -56,6 +62,7 @@ impl Draft {
             summary: String::new(),
             weights: Weights { homework: 0.2, assignment: 0.2, quiz: 0.1, test: 0.2, exam: 0.3, project: 0.0 },
             units: vec![DraftUnit::new(1)],
+            meta: CourseMeta { instructor: "Me".into(), color: "indigo".into(), ..Default::default() },
         }
     }
 }
@@ -66,6 +73,7 @@ impl DraftUnit {
             title: format!("Week {week}"),
             week,
             topics: vec![],
+            objectives: vec![],
             lesson_title: String::new(),
             lesson: String::new(),
             est_minutes: 30,
@@ -206,6 +214,19 @@ pub fn problems(d: &Draft) -> Vec<String> {
     out
 }
 
+/// What a draft's course page shows: its meta, with each unit's objectives under the key it's published with.
+fn published_meta(d: &Draft) -> CourseMeta {
+    let mut meta = d.meta.clone();
+    meta.objectives = d
+        .units
+        .iter()
+        .enumerate()
+        .map(|(i, u)| (format!("u{:02}", i + 1), u.objectives.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect()))
+        .collect();
+    meta.outcomes = meta.outcomes.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+    meta
+}
+
 /// The plan and unit contents a published draft becomes, with keys and modules filled in.
 fn compile(d: &Draft) -> (Plan, Vec<(String, UnitContent)>) {
     let last = d.units.len().saturating_sub(1);
@@ -296,7 +317,7 @@ pub fn publish(
     let tx = conn.unchecked_transaction().map_err(io)?;
     tx.execute(
         "UPDATE courses SET title=?2, subject=?3, plan_json=?4, late_policy=?5, strictness=?6, on_transcript=?7,
-                            starts_at=?8, mode='offline', readiness_json=?9, error=NULL, updated_at=?10
+                            starts_at=?8, mode='offline', readiness_json=?9, error=NULL, updated_at=?10, meta_json=?11
          WHERE id=?1",
         params![
             id,
@@ -308,7 +329,8 @@ pub fn publish(
             on_transcript,
             start.to_string(),
             serde_json::to_string(&plan.readiness).unwrap(),
-            db::now_utc()
+            db::now_utc(),
+            serde_json::to_string(&published_meta(&draft)).unwrap()
         ],
     )
     .map_err(io)?;
@@ -338,6 +360,8 @@ struct CourseFile {
     summary: String,
     weights: Weights,
     units: Vec<UnitFile>,
+    #[serde(default)]
+    meta: CourseMeta,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -346,6 +370,8 @@ struct UnitFile {
     title: String,
     week: u32,
     topics: Vec<String>,
+    #[serde(default)]
+    objectives: Vec<String>,
     lesson_title: String,
     est_minutes: u32,
 }
@@ -383,6 +409,7 @@ pub fn export(conn: &Connection, paths: &AppPaths, id: &str) -> Result<PathBuf, 
             title: u.title.clone(),
             week: u.week,
             topics: u.topics.clone(),
+            objectives: u.objectives.clone(),
             lesson_title: u.lesson_title.clone(),
             est_minutes: u.est_minutes,
         });
@@ -395,6 +422,7 @@ pub fn export(conn: &Connection, paths: &AppPaths, id: &str) -> Result<PathBuf, 
         summary: d.summary,
         weights: d.weights,
         units,
+        meta: d.meta,
     };
     std::fs::write(root.join("course.json"), serde_json::to_string_pretty(&file).unwrap()).map_err(|e| e.to_string())?;
     std::fs::write(root.join("README.txt"), README).map_err(|e| e.to_string())?;
@@ -425,13 +453,14 @@ pub fn import(conn: &Connection, folder: &Path) -> Result<String, String> {
             title: u.title,
             week: u.week,
             topics: u.topics,
+            objectives: u.objectives,
             lesson_title: u.lesson_title,
             lesson,
             est_minutes: u.est_minutes,
             items,
         });
     }
-    let draft = Draft { title: file.title, subject: file.subject, summary: file.summary, weights: file.weights, units };
+    let draft = Draft { title: file.title, subject: file.subject, summary: file.summary, weights: file.weights, units, meta: file.meta };
     if draft.title.trim().is_empty() {
         return Err("course.json has no title.".into());
     }
@@ -464,6 +493,9 @@ mod tests {
     /// A small but complete course: a quiz and a mixed homework in week 1.
     fn sample() -> Draft {
         let mut d = Draft::new("Chess openings");
+        d.meta.code = "CHESS 101".into();
+        d.meta.outcomes = vec!["Play the Italian with a plan".into(), "  ".into()];
+        d.units[0].objectives = vec!["Name the main line".into()];
         d.units[0].title = "The Italian Game".into();
         d.units[0].lesson = "# Italian\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4".into();
         d.units[0].items = vec![
@@ -516,6 +548,10 @@ mod tests {
         assert!(get(&conn, &id).is_err(), "published drafts aren't editable");
         let status: String = conn.query_row("SELECT status FROM courses WHERE id=?1", [&id], |r| r.get(0)).unwrap();
         assert_eq!(status, "active");
+        let meta = crate::course::view(&conn, &paths, &id).unwrap().meta;
+        assert_eq!(meta.code, "CHESS 101");
+        assert_eq!(meta.outcomes, ["Play the Italian with a plan"]);
+        assert_eq!(meta.objectives["u01"], ["Name the main line"]);
         crate::course::schedule::tick(&conn, Utc::now()).unwrap();
 
         // the quiz is all multiple choice / numeric, so the app marks it straight away
@@ -649,6 +685,8 @@ mod tests {
         let d = get(&conn, &copy).unwrap();
         assert_eq!(d.units[0].lesson, "Edited outside the app.");
         assert_eq!(d.units[0].items, sample().units[0].items);
+        assert_eq!(d.meta, sample().meta, "course details survive the round trip");
+        assert_eq!(d.units[0].objectives, ["Name the main line"]);
         assert!(import(&conn, &paths.user_dir).is_err());
     }
 }

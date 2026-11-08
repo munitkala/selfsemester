@@ -3,8 +3,8 @@
   import { goto } from "$app/navigation";
   import { api, live, type CourseView, type LatePolicy, type Strictness } from "$lib/api";
   import StrictnessChoice from "$lib/StrictnessChoice.svelte";
-  import ItemList from "$lib/ItemList.svelte";
   import Materials from "$lib/Materials.svelte";
+  import Classroom from "$lib/Classroom.svelte";
   import ProgressBar from "$lib/Progress.svelte";
   import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "$lib/format";
 
@@ -75,6 +75,10 @@
 {#if error}<p class="note bad">{error}</p>{/if}
 
 {#if c}
+  {@const running = c.status === "active" || c.status === "completed"}
+  {#if running}
+    <Classroom {c} />
+  {:else}
   <div class="spread">
     <div>
       <h1>{c.title}</h1>
@@ -100,6 +104,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 
   {#if c.error}
     <div class="note bad">
@@ -277,21 +282,8 @@
       </ul>
     </section>
 
-  <!-- 5. Studying -->
-  {:else if c.status === "active" || c.status === "completed"}
-    {#if c.status === "completed" && c.archive_dir}
-      <section class="card">
-        <h2>Course complete</h2>
-        <p>Your summary, lesson notes, work, feedback and reference list are saved in Documents.</p>
-        <button onclick={() => api.openFolder(c!.archive_dir!)}>Open the archive folder</button>
-      </section>
-    {/if}
-    {#each c.units as u (u.key)}
-      <section class="card">
-        <h2>Week {u.week} · {u.title}</h2>
-        <ItemList items={u.items} />
-      </section>
-    {/each}
+  <!-- 5. Studying: the classroom above has it all -->
+  {:else if running}
     {#if warnings.length}
       <details class="card">
         <summary>Checker notes ({warnings.length})</summary>
@@ -301,9 +293,11 @@
     {/if}
   {/if}
 
-  <Materials courseId={id} status={c.status} />
+  {#if !running}
+    <Materials courseId={id} status={c.status} />
+  {/if}
 
-  {#if c.sources.length && c.status !== "compiling"}
+  {#if c.sources.length && c.status !== "compiling" && !running}
     <details class="card">
       <summary>Reading list ({c.sources.length})</summary>
       <ul>

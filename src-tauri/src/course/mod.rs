@@ -72,6 +72,18 @@ pub struct CourseCard {
     pub items_total: i64,
     pub items_settled: i64,
     pub next_due: Option<String>,
+    pub origin: String,
+    pub strictness: String,
+    /// The published course's meta, or a draft's.
+    pub meta: types::CourseMeta,
+}
+
+/// meta_json, or for a draft the meta inside draft_json.
+fn card_meta(meta_json: Option<String>, draft_json: Option<String>) -> types::CourseMeta {
+    meta_json
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .or_else(|| draft_json.and_then(|d| serde_json::from_str::<Value>(&d).ok()).and_then(|d| serde_json::from_value(d["meta"].clone()).ok()))
+        .unwrap_or_default()
 }
 
 pub fn list(conn: &Connection) -> Result<Vec<CourseCard>, String> {
@@ -80,7 +92,8 @@ pub fn list(conn: &Connection) -> Result<Vec<CourseCard>, String> {
             "SELECT c.id, c.title, c.status, c.error, c.mode, c.final_percent,
                (SELECT count(*) FROM items i WHERE i.course_id=c.id AND i.kind!='lesson'),
                (SELECT count(*) FROM items i WHERE i.course_id=c.id AND i.kind!='lesson' AND i.state IN ('marked','missed')),
-               (SELECT min(due_at) FROM items i WHERE i.course_id=c.id AND i.state='open' AND i.due_at IS NOT NULL)
+               (SELECT min(due_at) FROM items i WHERE i.course_id=c.id AND i.state='open' AND i.due_at IS NOT NULL),
+               c.origin, c.strictness, c.meta_json, c.draft_json
              FROM courses c ORDER BY c.status='completed', c.updated_at DESC",
         )
         .map_err(io)?;
@@ -97,6 +110,9 @@ pub fn list(conn: &Connection) -> Result<Vec<CourseCard>, String> {
                 items_total: r.get(6)?,
                 items_settled: r.get(7)?,
                 next_due: r.get(8)?,
+                origin: r.get(9)?,
+                strictness: r.get(10)?,
+                meta: card_meta(r.get(11)?, r.get(12)?),
             })
         })
         .map_err(io)?
@@ -191,13 +207,14 @@ pub struct CourseView {
     pub progress: Option<progress::Progress>,
     pub strictness: String,
     pub origin: String,
+    pub meta: types::CourseMeta,
 }
 
 pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView, String> {
     let mut v = conn
         .query_row(
             "SELECT id, title, subject, status, error, mode, late_policy, on_transcript, questions_json, intake_json, plan_json,
-                    bundle_choice, starts_at, ends_at, final_percent, strictness, origin
+                    bundle_choice, starts_at, ends_at, final_percent, strictness, origin, meta_json
              FROM courses WHERE id=?1",
             [id],
             |r| {
@@ -225,6 +242,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     progress: None,
                     strictness: r.get(15)?,
                     origin: r.get(16)?,
+                    meta: r.get::<_, Option<String>>(17)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
                 })
             },
         )

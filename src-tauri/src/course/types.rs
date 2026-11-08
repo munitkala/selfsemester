@@ -113,6 +113,29 @@ pub struct SourceEntry {
     pub note: String,
 }
 
+// ---------- How a course presents itself ----------
+
+/// The details a real course page shows: code, term, instructor, banner colour, a welcome message, learning
+/// outcomes and each unit's objectives (by unit key). Written in the course builder; Claude-written courses leave it
+/// empty and the app fills in sensible defaults.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CourseMeta {
+    /// Short code shown on the course card, e.g. "CHESS 101".
+    pub code: String,
+    /// e.g. "Fall 2026"
+    pub term: String,
+    pub instructor: String,
+    /// Banner colour name from the app's palette (see src/lib/course.ts).
+    pub color: String,
+    /// Markdown shown first on the course home page.
+    pub welcome: String,
+    /// What the learner will be able to do by the end.
+    pub outcomes: Vec<String>,
+    /// Unit key -> "by the end of this unit you can..." lines.
+    pub objectives: std::collections::BTreeMap<String, Vec<String>>,
+}
+
 // ---------- 4. Unit content ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

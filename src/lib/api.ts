@@ -25,6 +25,16 @@ export type ClaudeStatus = {
 
 export type AppStatus = { claude: ClaudeStatus; data_dir: string; user_dir: string; schema_version: number; jobs: JobSummary };
 
+export type CourseMeta = {
+  code: string;
+  term: string;
+  instructor: string;
+  color: string;
+  welcome: string;
+  outcomes: string[];
+  objectives: Record<string, string[]>;
+};
+
 export type CourseCard = {
   id: string;
   title: string;
@@ -36,6 +46,9 @@ export type CourseCard = {
   items_total: number;
   items_settled: number;
   next_due: string | null;
+  origin: "claude" | "manual";
+  strictness: Strictness;
+  meta: CourseMeta;
 };
 
 export type ItemRow = {
@@ -104,6 +117,7 @@ export type CourseView = {
   progress: Progress | null;
   strictness: Strictness;
   origin: "claude" | "manual";
+  meta: CourseMeta;
 };
 
 export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
@@ -165,13 +179,23 @@ export type GenItem = {
   due_days: number;
 };
 
-export type DraftUnit = { title: string; week: number; topics: string[]; lesson_title: string; lesson: string; est_minutes: number; items: GenItem[] };
+export type DraftUnit = {
+  title: string;
+  week: number;
+  topics: string[];
+  objectives: string[];
+  lesson_title: string;
+  lesson: string;
+  est_minutes: number;
+  items: GenItem[];
+};
 export type Draft = {
   title: string;
   subject: string;
   summary: string;
   weights: Record<"homework" | "assignment" | "quiz" | "test" | "exam" | "project", number>;
   units: DraftUnit[];
+  meta: CourseMeta;
 };
 
 export type Today = {

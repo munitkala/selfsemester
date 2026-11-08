@@ -14,11 +14,16 @@ go on a transcript, and finished courses are archived to your Documents folder.
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it on the same
 schedule. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
-> **Status: early (0.2.0).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.3.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 ## Latest update (November 2026)
 
-Version 0.2.0 is out. What's new:
+Version 0.3.0 is out. Courses now feel a lot more like actual school: every course has its own classroom with a
+home page, weekly modules, a syllabus, a gradebook and a materials tab, plus next and previous buttons on lessons.
+The course builder got the details a real course has too: course code, term, instructor, colour, a welcome
+message, learning outcomes and weekly objectives.
+
+What came in 0.2.0:
 
 - **Add your own stuff to a course**: notes, PDFs, images. Claude uses them when it builds and marks the course.
 - **Sandbox mode**: retry as many times as you want, no late penalties. Structured mode is still there if you
@@ -31,18 +36,35 @@ The full list is in the [changelog](CHANGELOG.md).
 
 ## Screenshots
 
+### Your courses, laid out like school
+
+Shown with made-up demo courses written in the course builder (the names in them are invented).
+
+| | |
+| --- | --- |
+| ![Courses dashboard with a card for each course](assets/screenshots/09-courses.png) | ![Course home page with a welcome, what's coming up and recent marks](assets/screenshots/05-course.png) |
+| **Courses:** a card for each course with its code, instructor, progress and mark | **Course home:** a welcome, how the course works, what's coming up and recent marks |
+| ![Modules tab with each week's objectives, lesson and work](assets/screenshots/10-modules.png) | ![Syllabus tab with the description, outcomes and schedule](assets/screenshots/11-syllabus.png) |
+| **Modules:** every week has the same shape: objectives, a lesson, then the work | **Syllabus:** description, learning outcomes, schedule, grading and policies |
+| ![Grades tab with the current mark and averages by category](assets/screenshots/12-grades.png) | ![Course builder with steps and a live preview of the course card](assets/screenshots/13-builder.png) |
+| **Grades:** current mark, how much is decided, averages by category | **Course builder:** write your own course in four steps, with a live preview |
+| ![Sandbox result with Try again and Review with Claude](assets/screenshots/14-sandbox.png) | |
+| **Sandbox:** try again as often as you like; the answer key stays hidden until you ask for it | |
+
+### Courses Claude writes
+
 Shown with a one-week "Git basics" course that Claude generated for a test run (example names in it are made up).
 
 | | |
 | --- | --- |
 | ![Readiness report and syllabus shown before you enrol](assets/screenshots/02-plan-review.png) | ![Building a course, with a progress bar and time left](assets/screenshots/03-building.png) |
 | **Plan review:** syllabus, pacing and honest accuracy estimates before anything is built | **Building:** each unit is written, then checked by a second model |
-| ![Today view](assets/screenshots/04-today.png) | ![Course page with units, deadlines and the current mark](assets/screenshots/05-course.png) |
-| **Today:** what's due, what's new, what's been marked | **Course:** units, deadlines, states and the running mark |
-| ![Lesson reader](assets/screenshots/06-lesson.png) | ![Assignment with points, deadline and weight](assets/screenshots/07-assignment.png) |
-| **Lesson:** full self-study lessons, with a distraction-free reading mode | **Assignment:** deadline, points and share of the final grade |
-| ![Quiz marked automatically](assets/screenshots/08-quiz-result.png) | ![First-launch terms](assets/screenshots/01-terms.png) |
-| **Quiz:** marked instantly, with the right answer explained for each miss | **First launch:** the terms every user accepts |
+| ![Today view](assets/screenshots/04-today.png) | ![Lesson reader](assets/screenshots/06-lesson.png) |
+| **Today:** what's due, what's new, what's been marked | **Lesson:** full self-study lessons, with a distraction-free reading mode |
+| ![Assignment with points, deadline and weight](assets/screenshots/07-assignment.png) | ![Quiz marked automatically](assets/screenshots/08-quiz-result.png) |
+| **Assignment:** deadline, points and share of the final grade | **Quiz:** marked instantly, with the right answer explained for each miss |
+| ![First-launch terms](assets/screenshots/01-terms.png) | |
+| **First launch:** the terms every user accepts | |
 
 ## Requirements
 
@@ -87,6 +109,8 @@ To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio
 - **Instant feedback and review:** multiple-choice and numeric answers are checked the moment you submit, while
   Claude marks the rest. Every marked item has a **Review with Claude** thread to go over the questions, feedback
   and mark in depth; Claude can explain a mark but not change it.
+- **A classroom for every course:** a home page with what's next and what's due, weekly modules with objectives, a
+  syllabus, a gradebook and your materials, the same layout for every course.
 - **Course builder:** write the syllabus, lessons, questions, answer keys and rubrics yourself. Multiple-choice and
   numeric questions are marked by the app and you mark written answers against your own key, so these courses
   never call Claude. A draft can be exported to a plain folder, edited in any text editor and imported back.
@@ -96,10 +120,12 @@ To build from source you also need Node.js 20+, Rust 1.85+ and the Visual Studio
 Everything stays on your computer. The app has no server and no account system. The only thing that talks to the
 internet is your Claude Code, which sends course prompts, your course materials, your submitted work and review questions to Anthropic
 to generate and mark courses, under your agreement with Anthropic. SelfSemester never reads, stores or sends your Claude sign-in.
+Courses you write in the course builder never leave your computer, unless you ask Claude about one in review mode.
 
 | Folder | Contents |
 | --- | --- |
 | `%LOCALAPPDATA%\SelfSemester` | Database, course files, sealed answer keys, submissions, your course materials |
+| `Documents\SelfSemester\Course builder` | Courses you export from the course builder, to edit in a text editor |
 | `Documents\SelfSemester\Completed` | Archives of finished courses: summary, lesson notes, your work, feedback, reference list |
 
 ## Legal and responsible use
@@ -109,8 +135,9 @@ first time it opens. In short:
 
 - **No warranty.** It's free software provided as is. The authors aren't liable for any loss, including wrong marks,
   lost data or usage on your Claude account. You use it at your own risk.
-- **Not professional advice.** Courses are AI-generated self-study material. For medicine, law, finance, safety or
-  any subject where a mistake could hurt someone, check everything with a qualified professional.
+- **Not professional advice.** Courses Claude writes are AI-generated self-study material, and courses you write
+  yourself are your own content. For medicine, law, finance, safety or any subject where a mistake could hurt someone,
+  check everything with a qualified professional.
 - **Personal study only.** Don't publish or sell generated courses or downloaded sources. Follow each source's
   licence, and never use or change the app to get around paywalls, logins or site terms.
 - **Your Claude account, your agreement.** Claude Code runs under your own agreement with Anthropic, and your

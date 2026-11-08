@@ -127,7 +127,7 @@ fn resume_now(app: AppHandle, state: tauri::State<'_, AppState>, course_id: Opti
 // ---------- terms notice ----------
 
 /// Bump when the first-launch notice changes, so everyone sees the new version once.
-const NOTICE_KEY: &str = "notice_v1_accepted_at";
+const NOTICE_KEY: &str = "notice_v2_accepted_at";
 
 #[tauri::command]
 fn notice_accepted(state: tauri::State<'_, AppState>) -> Res<bool> {

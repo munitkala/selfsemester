@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { api, live, type ItemView } from "$lib/api";
+  import { api, live, type CourseView, type ItemView } from "$lib/api";
+  import { codeOf, colorVars } from "$lib/course";
+  import KindIcon from "$lib/KindIcon.svelte";
   import { render } from "$lib/markdown";
   import ProgressBar from "$lib/Progress.svelte";
   import Review from "$lib/Review.svelte";
@@ -9,6 +11,7 @@
 
   const id = $derived(page.params.id ?? "");
   let v = $state<ItemView | null>(null);
+  let course = $state<CourseView | null>(null);
   let error = $state<string | null>(null);
   let busy = $state(false);
   let focus = $state(false); // distraction-free reading
@@ -30,6 +33,9 @@
       try {
         v = await api.item(itemId);
         error = null;
+        if (course?.id !== v.item.course_id || course.units.some((u) => u.items.some((i) => i.id === itemId && i.state !== v!.item.state))) {
+          course = await api.course(v.item.course_id).catch(() => null);
+        }
       } catch (e) {
         error = String(e);
       }
@@ -120,13 +126,24 @@
   }
 
   const markingState = $derived(v?.marking_status?.split("|") ?? []);
+
+  // the course's items in order, for Previous / Next
+  const order = $derived(course?.units.flatMap((u) => u.items) ?? []);
+  const here = $derived(order.findIndex((i) => i.id === id));
+  const prev = $derived(here > 0 ? order[here - 1] : null);
+  const next = $derived(here >= 0 && here < order.length - 1 ? order[here + 1] : null);
+  const courseHref = $derived(v ? `/course/${encodeURIComponent(v.item.course_id)}` : "/courses");
 </script>
 
 {#if error}<p class="note bad">{error}</p>{/if}
 
 {#if v}
   {#if !focus}
-    <p class="crumbs small"><a href="/course/{encodeURIComponent(v.item.course_id)}">{v.item.course_title}</a>{#if v.item.unit_title} · {v.item.unit_title}{/if}</p>
+    <nav class="course-strip small" style={course ? colorVars(course.meta, course.id) : ""} aria-label="Course">
+      <a href={courseHref}><span class="code">{codeOf(course?.meta, v.item.course_title)}</span> {v.item.course_title}</a>
+      {#if v.item.unit_title}<span class="muted">· {v.item.unit_title}</span>{/if}
+      <span class="strip-links"><a href="{courseHref}?tab=modules">Modules</a> <a href="{courseHref}?tab=grades">Grades</a> <a href="{courseHref}?tab=syllabus">Syllabus</a></span>
+    </nav>
     <div class="spread">
       <h1>{v.item.title}</h1>
       <span class="pill {v.item.state}">{stateLabel[v.item.state]}</span>
@@ -181,7 +198,7 @@
               {:else if q.type === "mcq" && q.options.length}
                 <ul class="given">
                   {#each q.options as o}
-                    <li class:chosen={v.submission?.answers?.[q.id] === o}>{@html render(o)}{#if v.submission?.answers?.[q.id] === o} <span class="small muted">(your answer)</span>{/if}</li>
+                    <li class:chosen={v.submission?.answers?.[q.id] === o}>{@html render(o)}{#if v.submission?.answers?.[q.id] === o}{" "}<span class="small muted">(your answer)</span>{/if}</li>
                   {/each}
                 </ul>
               {:else if q.type === "numeric" && v.submission?.answers?.[q.id]}
@@ -258,7 +275,7 @@
         <p class="small muted">Your multiple-choice and numeric answers, checked the moment you submitted. The full mark follows.</p>
         <ul class="instant">
           {#each v.submission.instant.lines as l}
-            <li><span class={l.awarded > 0 ? "good" : "bad"}>{l.awarded > 0 ? "✓" : "✗"}</span> {l.criterion}: {l.comment} <span class="muted small">({l.awarded} / {l.possible})</span></li>
+            <li><span class={l.awarded > 0 ? "good" : "bad"}>{l.awarded > 0 ? "✓" : "✗"}</span> {questionLabel(l.criterion)}: {l.comment} <span class="muted small">({l.awarded} / {l.possible})</span></li>
           {/each}
         </ul>
       </section>
@@ -331,7 +348,7 @@
               <thead><tr><th>Criterion</th><th>Score</th><th>Comment</th></tr></thead>
               <tbody>
                 {#each v.mark.breakdown.lines as l}
-                  <tr><td>{l.criterion}</td><td class="nowrap">{l.awarded} / {l.possible}</td><td class="prose small">{@html render(l.comment)}</td></tr>
+                  <tr><td>{questionLabel(l.criterion)}</td><td class="nowrap">{l.awarded} / {l.possible}</td><td class="prose small">{@html render(l.comment)}</td></tr>
                 {/each}
               </tbody>
             </table>
@@ -376,13 +393,77 @@
       <Review itemId={id} thread={v.review} keyHidden={sandbox && v.item.state === "marked" && !v.key_revealed} courseId={v.item.course_id} />
     {/if}
   {/if}
+
+  {#if !focus && (prev || next)}
+    <nav class="pager" aria-label="Previous and next in this course">
+      {#if prev}
+        <a class="pg" href="/item/{encodeURIComponent(prev.id)}"><span class="small muted">← Previous</span><span><KindIcon kind={prev.kind} size={15} /> {prev.title}</span></a>
+      {:else}<span></span>{/if}
+      {#if next}
+        {#if next.state === "locked"}
+          <span class="pg right locked"><span class="small muted">Next · opens {when(next.release_at)}</span><span><KindIcon kind={next.kind} size={15} /> {next.title}</span></span>
+        {:else}
+          <a class="pg right" href="/item/{encodeURIComponent(next.id)}"><span class="small muted">Next →</span><span><KindIcon kind={next.kind} size={15} /> {next.title}</span></a>
+        {/if}
+      {/if}
+    </nav>
+  {/if}
 {:else if !error}
   <p class="muted">Loading…</p>
 {/if}
 
 <style>
-  .crumbs {
-    margin: 0 0 0.3rem;
+  .course-strip {
+    --course: var(--accent);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.6rem;
+    align-items: center;
+    padding: 0.45rem 0.8rem;
+    margin-bottom: 0.8rem;
+    border-left: 4px solid var(--course);
+    background: var(--panel);
+    border-radius: 0 8px 8px 0;
+  }
+  .course-strip .code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 0.78rem;
+    color: var(--course);
+    font-weight: 700;
+    margin-right: 0.2rem;
+  }
+  .strip-links {
+    margin-left: auto;
+    display: flex;
+    gap: 0.8rem;
+  }
+  .pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  .pg {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    text-decoration: none;
+  }
+  a.pg:hover,
+  a.pg:focus-visible {
+    border-color: var(--accent);
+  }
+  .pg.right {
+    text-align: right;
+    align-items: flex-end;
+  }
+  .pg.locked {
+    opacity: 0.6;
   }
   .reader.focus {
     position: fixed;

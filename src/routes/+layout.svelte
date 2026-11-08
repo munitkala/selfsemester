@@ -68,7 +68,7 @@
       <p class="muted">SelfSemester is free software, provided as is. Please read and accept these points.</p>
       <ul>
         <li><strong>No warranty or liability.</strong> You use it at your own risk. The authors aren't responsible for any loss, including wrong marks, lost data, or usage and charges on your Claude account.</li>
-        <li><strong>Not professional advice.</strong> Courses are AI-generated self-study material and can contain mistakes. For health, law, money, safety or any subject where an error could cause harm, check everything with a qualified professional.</li>
+        <li><strong>Not professional advice.</strong> Courses Claude writes are AI-generated self-study material and can contain mistakes; courses you write yourself are your own content. For health, law, money, safety or any subject where an error could cause harm, check everything with a qualified professional.</li>
         <li><strong>Not a qualification.</strong> Marks and transcripts aren't accredited and give no degree, credit or certification.</li>
         <li><strong>Personal study only.</strong> Don't publish or sell generated courses or downloaded material. Follow each source's licence, and don't use the app to get around paywalls, logins or site terms.</li>
         <li><strong>Your data goes to Anthropic.</strong> Course requests and the work you submit, including photos, are sent to Anthropic through your own Claude Code, under your own agreement with Anthropic. Don't submit other people's personal information.</li>
