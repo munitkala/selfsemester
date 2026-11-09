@@ -1,6 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { api, live, type Material } from "$lib/api";
+  import { api, live, type Material } from "#lib/api.ts";
 
   let { courseId, status }: { courseId: string; status: string } = $props();
 

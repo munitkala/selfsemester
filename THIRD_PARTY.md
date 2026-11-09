@@ -28,11 +28,14 @@ crates' own files, which are used unmodified, and doesn't affect the rest of the
 | Package | Version | Licence | Used for |
 | --- | --- | --- | --- |
 | @tauri-apps/api, plugin-dialog, plugin-opener | 2.x | MIT OR Apache-2.0 | Talking to the Rust side |
+| @sveltejs/kit (client runtime) | 3.1 | MIT | Screens and navigation |
+| svelte (runtime) | 5 | MIT | Screens and navigation |
 | marked | 18.1 | MIT | Markdown rendering |
 | katex (including its fonts) | 0.19 | MIT | Maths rendering |
 | dompurify | 3.4 | MPL-2.0 OR Apache-2.0 (used under Apache-2.0) | Sanitising rendered HTML |
 
-Build-only tools (SvelteKit, Svelte, Vite, TypeScript, svelte-check) are MIT licensed and aren't shipped.
+Build-only tools (the Svelte and SvelteKit compilers, the static adapter, Vite, TypeScript, svelte-check) are MIT
+licensed and aren't shipped. `deepmerge` (MIT), pulled in by the Svelte build plugin, is build-only too.
 
 ## Not included
 

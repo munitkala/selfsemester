@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, live, type Transcript } from "$lib/api";
-  import { day, pct } from "$lib/format";
+  import { api, live, type Transcript } from "#lib/api.ts";
+  import { day, pct } from "#lib/format.ts";
 
   let t = $state<Transcript | null>(null);
   let error = $state<string | null>(null);

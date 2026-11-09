@@ -1,12 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, live, type CourseView, type LatePolicy, type Strictness } from "$lib/api";
-  import StrictnessChoice from "$lib/StrictnessChoice.svelte";
-  import Materials from "$lib/Materials.svelte";
-  import Classroom from "$lib/Classroom.svelte";
-  import ProgressBar from "$lib/Progress.svelte";
-  import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "$lib/format";
+  import { api, live, type CourseView, type LatePolicy, type Strictness } from "#lib/api.ts";
+  import StrictnessChoice from "#lib/StrictnessChoice.svelte";
+  import Materials from "#lib/Materials.svelte";
+  import Classroom from "#lib/Classroom.svelte";
+  import ProgressBar from "#lib/Progress.svelte";
+  import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "#lib/format.ts";
 
   const id = $derived(page.params.id ?? "");
   let c = $state<CourseView | null>(null);

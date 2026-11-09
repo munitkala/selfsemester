@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Progress } from "$lib/api";
+  import type { Progress } from "#lib/api.ts";
 
   let { p }: { p: Progress } = $props();
   let now = $state(Date.now());

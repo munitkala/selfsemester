@@ -1,6 +1,6 @@
 [package]
 name = "selfsemester"
-version = "0.4.0"
+version = "0.4.1"
 description = "Turns any subject into a full, deadline-based, graded course"
 repository = "https://github.com/munitkala/selfsemester"
 authors = ["The SelfSemester authors"]

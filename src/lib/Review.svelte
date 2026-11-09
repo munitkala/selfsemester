@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { api, type ReviewThread } from "$lib/api";
-  import { render } from "$lib/markdown";
-  import { when } from "$lib/format";
+  import { api, type ReviewThread } from "#lib/api.ts";
+  import { render } from "#lib/markdown.ts";
+  import { when } from "#lib/format.ts";
 
   let { itemId, thread, keyHidden, courseId }: { itemId: string; thread: ReviewThread; keyHidden: boolean; courseId: string } = $props();
 

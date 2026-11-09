@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Strictness } from "$lib/api";
+  import type { Strictness } from "#lib/api.ts";
 
   let { value = $bindable("structured") }: { value: Strictness } = $props();
 </script>

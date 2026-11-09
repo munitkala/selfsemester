@@ -7,6 +7,27 @@ are listed under **Unreleased**.
 
 Nothing yet.
 
+## 0.4.1 (2026-11-09)
+
+### Security updates
+
+**Why:** GitHub's Dependabot flagged five advisories in the app's dependencies.
+
+- Updated SvelteKit from 2.70 to 3.1 and the static adapter from 3.0 to 4.0. This fixes two SvelteKit advisories
+  (a redirect through enhanced form submission, and script injection through a cache-control header in prerendered
+  pages) and one in `cookie`, which SvelteKit 2 depended on. None of them could be triggered in SelfSemester, which
+  has no server, forms that post to one, or prerendered pages, but the fixed versions are what ships now.
+- Moving to SvelteKit 3 meant a few code changes: its settings moved from `svelte.config.js` into
+  `vite.config.js`, `$lib` imports became `#lib` (set up in `package.json` under `imports`), `tsconfig.json`
+  extends `$app/tsconfig`, and switching tabs in a classroom uses the new navigation options. Nothing you see in
+  the app changed.
+- Building from source now needs Node.js 22.17 or newer (SvelteKit 3's minimum). The installer is unaffected.
+- Two advisories have no fix to install and don't affect SelfSemester:
+  - `glib` (Rust) is part of Tauri's Linux window code. It isn't built into the Windows app at all, and a fix needs a
+    newer GTK version than Tauri 2 uses.
+  - `deepmerge` (npm) is used by the Svelte build plugin to merge its own settings while building. It never runs
+    in the app and never sees user input, and no patched version has been published.
+
 ## 0.4.0 (2026-11-08)
 
 ### Your work is kept across updates

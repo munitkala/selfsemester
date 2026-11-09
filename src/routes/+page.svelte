@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, live, type Today, type CourseCard } from "$lib/api";
-  import ItemList from "$lib/ItemList.svelte";
-  import { statusLabel } from "$lib/format";
+  import { api, live, type Today, type CourseCard } from "#lib/api.ts";
+  import ItemList from "#lib/ItemList.svelte";
+  import { statusLabel } from "#lib/format.ts";
 
   let today = $state<Today | null>(null);
   let courses = $state<CourseCard[]>([]);

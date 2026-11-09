@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, live, type CourseCard } from "$lib/api";
-  import { pct, statusLabel, when } from "$lib/format";
-  import CourseBanner from "$lib/CourseBanner.svelte";
+  import { api, live, type CourseCard } from "#lib/api.ts";
+  import { pct, statusLabel, when } from "#lib/format.ts";
+  import CourseBanner from "#lib/CourseBanner.svelte";
 
   let courses = $state<CourseCard[] | null>(null);
   let error = $state<string | null>(null);

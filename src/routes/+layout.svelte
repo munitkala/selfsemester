@@ -3,9 +3,9 @@
   import "../app.css";
   import { page } from "$app/state";
   import { onMount } from "svelte";
-  import { api, live, type JobSummary } from "$lib/api";
+  import { api, live, type JobSummary } from "#lib/api.ts";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { stageLabel, when } from "$lib/format";
+  import { stageLabel, when } from "#lib/format.ts";
 
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);

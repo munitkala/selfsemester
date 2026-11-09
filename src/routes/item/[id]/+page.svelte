@@ -1,13 +1,13 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { api, live, type CourseView, type ItemView } from "$lib/api";
-  import { codeOf, colorVars } from "$lib/course";
-  import KindIcon from "$lib/KindIcon.svelte";
-  import { render } from "$lib/markdown";
-  import ProgressBar from "$lib/Progress.svelte";
-  import Review from "$lib/Review.svelte";
-  import { kindLabel, stateLabel, when, relative, pct } from "$lib/format";
+  import { api, live, type CourseView, type ItemView } from "#lib/api.ts";
+  import { codeOf, colorVars } from "#lib/course.ts";
+  import KindIcon from "#lib/KindIcon.svelte";
+  import { render } from "#lib/markdown.ts";
+  import ProgressBar from "#lib/Progress.svelte";
+  import Review from "#lib/Review.svelte";
+  import { kindLabel, stateLabel, when, relative, pct } from "#lib/format.ts";
 
   const id = $derived(page.params.id ?? "");
   let v = $state<ItemView | null>(null);

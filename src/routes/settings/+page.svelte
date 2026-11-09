@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppStatus, type BackupInfo } from "$lib/api";
-  import { when } from "$lib/format";
+  import { api, type AppStatus, type BackupInfo } from "#lib/api.ts";
+  import { when } from "#lib/format.ts";
 
   let status = $state<AppStatus | null>(null);
   let loadError = $state<string | null>(null);

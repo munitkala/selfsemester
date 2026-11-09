@@ -18,6 +18,9 @@ schedule. What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Latest update (November 2026)
 
+Version 0.4.1 is a security update: I updated the framework the app is built on after GitHub flagged a few
+issues in it. Nothing changes in how the app works, and your courses carry over like always.
+
 Version 0.4.0 is out, and you can now download a ready-made installer. Updating keeps all your courses and
 progress, and SelfSemester backs up your data before every update just in case.
 
@@ -77,7 +80,7 @@ Shown with a one-week "Git basics" course that Claude generated for a test run (
 | [Claude Code](https://claude.com/claude-code) | Installed and signed in **with a Claude subscription** (Pro or Max). SelfSemester runs your own copy of Claude Code; there's no API key to enter. |
 | Internet | Needed while a course is being built and whenever work is marked. Reading lessons and doing work happen offline. |
 
-To build from source instead of downloading the installer, you also need Node.js 20+, Rust 1.85+ and the Visual
+To build from source instead of downloading the installer, you also need Node.js 22.17+, Rust 1.85+ and the Visual
 Studio C++ build tools (see [Install](#install)).
 
 ## Before you use it
@@ -177,7 +180,7 @@ and `Documents\SelfSemester` stays until you delete it yourself.
 
 ### Or build it yourself
 
-You need Node.js 20+, Rust 1.85+ and the Visual Studio C++ build tools.
+You need Node.js 22.17+, Rust 1.85+ and the Visual Studio C++ build tools.
 
 ```powershell
 git clone https://github.com/munitkala/selfsemester.git

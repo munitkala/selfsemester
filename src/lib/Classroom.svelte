@@ -3,13 +3,13 @@
   // same tabs and the same module layout for every course so it's always clear where things are.
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, type CourseView, type ItemRow } from "$lib/api";
-  import { render } from "$lib/markdown";
-  import { day, kindLabel, letter, pct, when } from "$lib/format";
-  import { agenda, colorVars, markedBy, nextUp, settled, statusOf } from "$lib/course";
-  import CourseBanner from "$lib/CourseBanner.svelte";
-  import KindIcon from "$lib/KindIcon.svelte";
-  import Materials from "$lib/Materials.svelte";
+  import { api, type CourseView, type ItemRow } from "#lib/api.ts";
+  import { render } from "#lib/markdown.ts";
+  import { day, kindLabel, letter, pct, when } from "#lib/format.ts";
+  import { agenda, colorVars, markedBy, nextUp, settled, statusOf } from "#lib/course.ts";
+  import CourseBanner from "#lib/CourseBanner.svelte";
+  import KindIcon from "#lib/KindIcon.svelte";
+  import Materials from "#lib/Materials.svelte";
 
   let { c }: { c: CourseView } = $props();
 
@@ -24,7 +24,7 @@
   const tab = $derived((TABS.find((t) => t.id === page.url.searchParams.get("tab"))?.id ?? "home") as Tab);
 
   function show(t: Tab) {
-    goto(`?tab=${t}`, { replaceState: true, noScroll: true, keepFocus: true });
+    goto(`?tab=${t}`, { replace: true, reset: false });
   }
 
   const items = $derived(c.units.flatMap((u) => u.items));

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { api, live, type CourseCard } from "$lib/api";
+  import { api, live, type CourseCard } from "#lib/api.ts";
 
   let title = $state("");
   let drafts = $state<CourseCard[]>([]);

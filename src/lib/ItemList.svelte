@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { ItemRow } from "$lib/api";
-  import { kindLabel, stateLabel, when, relative, pct } from "$lib/format";
+  import type { ItemRow } from "#lib/api.ts";
+  import { kindLabel, stateLabel, when, relative, pct } from "#lib/format.ts";
 
   let { items, showCourse = false, empty = "" }: { items: ItemRow[]; showCourse?: boolean; empty?: string } = $props();
 

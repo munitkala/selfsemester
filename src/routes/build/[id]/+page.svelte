@@ -1,14 +1,14 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, type Draft, type DraftUnit, type GenItem, type LatePolicy, type Question, type Strictness } from "$lib/api";
-  import { render } from "$lib/markdown";
-  import { kindLabel, todayIso } from "$lib/format";
-  import { PALETTE, codeOf } from "$lib/course";
-  import StrictnessChoice from "$lib/StrictnessChoice.svelte";
-  import CourseBanner from "$lib/CourseBanner.svelte";
-  import KindIcon from "$lib/KindIcon.svelte";
-  import ListEditor from "$lib/ListEditor.svelte";
+  import { api, type Draft, type DraftUnit, type GenItem, type LatePolicy, type Question, type Strictness } from "#lib/api.ts";
+  import { render } from "#lib/markdown.ts";
+  import { kindLabel, todayIso } from "#lib/format.ts";
+  import { PALETTE, codeOf } from "#lib/course.ts";
+  import StrictnessChoice from "#lib/StrictnessChoice.svelte";
+  import CourseBanner from "#lib/CourseBanner.svelte";
+  import KindIcon from "#lib/KindIcon.svelte";
+  import ListEditor from "#lib/ListEditor.svelte";
 
   const id = $derived(page.params.id ?? "");
   let draft = $state<Draft | null>(null);

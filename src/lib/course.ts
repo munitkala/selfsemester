@@ -1,8 +1,8 @@
 // Shared bits for showing a course the way a school course page would: banner colours, course codes, who teaches
 // it, what each item's status means, and what to do next.
 
-import type { CourseMeta, ItemRow } from "$lib/api";
-import { relative, when } from "$lib/format";
+import type { CourseMeta, ItemRow } from "#lib/api.ts";
+import { relative, when } from "#lib/format.ts";
 
 /** Banner colours. Each has a deep tone for the banner and a light tint for chips; both work in light and dark. */
 export const PALETTE: { name: string; label: string; deep: string; tint: string }[] = [

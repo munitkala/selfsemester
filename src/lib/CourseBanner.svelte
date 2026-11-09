@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { CourseMeta } from "$lib/api";
-  import { codeOf, colorVars, instructorOf } from "$lib/course";
+  import type { CourseMeta } from "#lib/api.ts";
+  import { codeOf, colorVars, instructorOf } from "#lib/course.ts";
   import type { Snippet } from "svelte";
 
   let {

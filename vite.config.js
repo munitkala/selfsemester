@@ -1,12 +1,15 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import adapter from "@sveltejs/adapter-static";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [sveltekit()],
+  // Tauri has no Node server, so the app is built as a single-page app with index.html as the fallback.
+  plugins: [sveltekit({ adapter: adapter({ fallback: "index.html" }), preprocess: vitePreprocess() })],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
