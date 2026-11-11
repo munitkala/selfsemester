@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Building and testing only needs to read the code.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
