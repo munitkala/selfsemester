@@ -13,6 +13,7 @@
 
 import katex from "katex";
 import DOMPurify from "dompurify";
+import { widgetSlot } from "#lib/widgets.ts";
 
 // ---------- a small, safe expression parser for plots (no eval) ----------
 
@@ -348,7 +349,7 @@ export function inline(text: string): string {
     .join("");
 }
 
-const FENCE = /^```(plot|diagram)[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
+const FENCE = /^```(plot|diagram|widget)[^\n]*\n([\s\S]*?)^```[ \t]*$/gm;
 
 /** Pull figure blocks out of a lesson. Returns the Markdown with placeholders and the figures' HTML, numbered in order. */
 export function extractFigures(md: string): { md: string; figures: string[] } {
@@ -357,11 +358,15 @@ export function extractFigures(md: string): { md: string; figures: string[] } {
     const n = figures.length + 1;
     let caption = "";
     let credit = "";
+    let height = 320;
+    let tools: string[] = [];
     const lines = body.split("\n");
-    while (lines.length && /^(caption|credit|source)\s*:/i.test(lines[0].trim())) {
+    while (lines.length && /^(caption|credit|source|height|tools)\s*:/i.test(lines[0].trim())) {
       const line = lines.shift()!.trim();
       const value = line.slice(line.indexOf(":") + 1).trim();
       if (/^caption/i.test(line)) caption = value;
+      else if (/^height/i.test(line)) height = parseInt(value, 10);
+      else if (/^tools/i.test(line)) tools = value.split(/[,\s]+/).filter((t) => /^[a-z0-9-]+$/.test(t));
       else credit = value;
     }
     const content = lines.join("\n").trim();
@@ -376,6 +381,8 @@ export function extractFigures(md: string): { md: string; figures: string[] } {
             .map((l) => `<li><span class="key ${l.area ? `area a${l.color}` : `c${l.color}`}${l.dashed ? " dash" : ""}"></span>${inline(l.label)}</li>`)
             .join("")}</ul>`;
         }
+      } else if (kind === "widget") {
+        inner = widgetSlot(content, height, caption, tools);
       } else {
         inner = cleanSvg(content);
       }

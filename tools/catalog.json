@@ -1,0 +1,216 @@
+{
+  "release": "tools-1",
+  "tools": [
+    {
+      "id": "maths",
+      "name": "Maths and formulas",
+      "category": "built-in",
+      "summary": "Shows formulas and equations in lessons, questions and your answers.",
+      "for": "Every course with maths",
+      "credit": "KaTeX"
+    },
+    {
+      "id": "figures",
+      "name": "Graphs and diagrams",
+      "category": "built-in",
+      "summary": "Draws graphs straight from the equations and shows labelled diagrams.",
+      "for": "Maths, sciences, engineering and more"
+    },
+    {
+      "id": "interactive",
+      "name": "Interactive figures",
+      "category": "built-in",
+      "summary": "Sliders, small simulations and practice drills inside a lesson. Each runs sealed off from the internet and your files.",
+      "for": "Any course where trying things helps"
+    },
+    {
+      "id": "sounds",
+      "name": "Lesson sounds",
+      "category": "built-in",
+      "summary": "Plays words, tones and notes in lessons, using free recordings from Wikimedia Commons or your computer's own voices.",
+      "for": "Languages, music and other courses where hearing matters"
+    },
+    {
+      "id": "geometry",
+      "name": "Geometry and graphing",
+      "category": "common",
+      "summary": "Lets lessons have shapes, points and graphs you can drag and change.",
+      "for": "Maths, physics, engineering, economics",
+      "licence": "MIT (also offered under LGPL-3.0)",
+      "credit": "JSXGraph 1.10.1",
+      "hint": "JSXGraph 1.10 as the global JXG. Make a <div id=\"box\" style=\"width:100%;aspect-ratio:4/3\"></div>, then const b = JXG.JSXGraph.initBoard(\"box\", {boundingbox: [-5, 5, 5, -5], axis: true, showCopyright: false, showNavigation: false}); and b.create(\"point\", [1, 2]), b.create(\"slider\", [[-4, 4], [0, 4], [0, 1, 3]]), b.create(\"functiongraph\", [x => x * x]), b.create(\"line\", [p, q]), b.create(\"circle\", [p, 2]). So it reads in dark themes, read the theme colours first (const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim()) and before initBoard set JXG.Options.text.strokeColor, JXG.Options.axis.ticks.label.strokeColor and JXG.Options.slider.label.strokeColor to css(\"--text\"), JXG.Options.axis.strokeColor to css(\"--muted\") and JXG.Options.axis.ticks.strokeColor to css(\"--line\"); give each element a strokeColor from css(\"--chart-1\") to css(\"--chart-6\").",
+      "scripts": [
+        "jsxgraphcore.js"
+      ],
+      "styles": [
+        "jsxgraph.css"
+      ],
+      "files": [
+        {
+          "name": "jsxgraphcore.js",
+          "from": "jsxgraph@1.10.1/distrib/jsxgraphcore.js",
+          "sha256": "e28202a28e94c3b75d76bccb09a070c8ea0b12b8620762c190bc34172c082e92",
+          "bytes": 925129
+        },
+        {
+          "name": "jsxgraph.css",
+          "from": "jsxgraph@1.10.1/distrib/jsxgraph.css",
+          "sha256": "3b62ae6dc649c3d78f46e419b6373c43bd0eac07a218b84847e162a419f20530",
+          "bytes": 4747
+        },
+        {
+          "name": "LICENSE.MIT.txt",
+          "from": "jsxgraph@1.10.1/LICENSE.MIT",
+          "sha256": "43e325001487de7f09745fbe086b054bb1b70d4ab58060e87153849365b23ff1",
+          "bytes": 1201
+        }
+      ]
+    },
+    {
+      "id": "music-notation",
+      "name": "Sheet music",
+      "category": "common",
+      "summary": "Shows notes on a stave, so music lessons can show what they teach.",
+      "for": "Music, piano, guitar, music theory",
+      "licence": "MIT",
+      "credit": "abcjs 6.4.4",
+      "hint": "abcjs 6.4 as the global ABCJS, for showing notation (it can't play sound in a figure; use an audio block for that). Write the music in ABC notation and call ABCJS.renderAbc(\"paper\", \"X:1\\nM:4/4\\nL:1/4\\nK:C\\nC D E F | G2 G2 |\", {responsive: \"resize\"}) on a <div id=\"paper\"></div>.",
+      "scripts": [
+        "abcjs-basic-min.js"
+      ],
+      "styles": [],
+      "files": [
+        {
+          "name": "abcjs-basic-min.js",
+          "from": "abcjs@6.4.4/dist/abcjs-basic-min.js",
+          "sha256": "1f060d3568b8f49c0f22b7eaa98f8eb9e34a0e83c2dc14bc730d572a320e4c69",
+          "bytes": 483417
+        },
+        {
+          "name": "LICENSE.md",
+          "from": "abcjs@6.4.4/LICENSE.md",
+          "sha256": "f44bd84b51e9d78b2507f95e49807a364c6e915817290a5e9f3dcc04213e2f67",
+          "bytes": 1135
+        }
+      ]
+    },
+    {
+      "id": "molecules",
+      "name": "3D molecules",
+      "category": "common",
+      "summary": "Shows molecules in 3D that you can turn and zoom.",
+      "for": "Chemistry, biochemistry, biology",
+      "licence": "BSD-3-Clause",
+      "credit": "3Dmol.js 2.4.2",
+      "hint": "3Dmol.js 2.4 as the global $3Dmol. Make a <div id=\"mol\" style=\"width:100%;height:320px;position:relative\"></div>, then const v = $3Dmol.createViewer(\"mol\", {backgroundColor: \"white\"}); v.addModel(xyzText, \"xyz\"); v.setStyle({}, {stick: {}, sphere: {scale: 0.25}}); v.zoomTo(); v.render(). Write the atom coordinates inline in XYZ or SDF format (no downloads).",
+      "scripts": [
+        "3Dmol-min.js"
+      ],
+      "styles": [],
+      "files": [
+        {
+          "name": "3Dmol-min.js",
+          "from": "3dmol@2.4.2/build/3Dmol-min.js",
+          "sha256": "06b6d2fc7d418e8bef62a32cca44373ff21b2b787bd377613dd4039394a4e9ff",
+          "bytes": 513564
+        },
+        {
+          "name": "LICENSE.txt",
+          "from": "3dmol@2.4.2/LICENSE",
+          "sha256": "4c6eaaed856f3f28a3b1a98e74f4a8a71618de7d51ea4155c29f6f793bcef861",
+          "bytes": 4283
+        },
+        {
+          "name": "3Dmol-min.js.LICENSE.txt",
+          "from": "3dmol@2.4.2/build/3Dmol-min.js.LICENSE.txt",
+          "sha256": "a19e941278b24712966bd9eb2de7692707a4a2c65dc0a831106f728497089396",
+          "bytes": 120
+        }
+      ]
+    },
+    {
+      "id": "maps",
+      "name": "World maps",
+      "category": "common",
+      "summary": "Draws maps of the world and its countries that work offline, for map quizzes and charts.",
+      "for": "Geography, history, politics, economics, languages",
+      "licence": "ISC (map data from Natural Earth, public domain)",
+      "credit": "D3 7.9.0, topojson-client 3.1.0, world-atlas 2.0.2",
+      "hint": "D3 7.9 as the global d3, topojson-client as the global topojson, and the world's countries as WORLD_110M (TopoJSON). const land = topojson.feature(WORLD_110M, WORLD_110M.objects.countries); then draw with d3.geoPath(d3.geoEqualEarth().fitSize([600, 320], land)) into an <svg viewBox=\"0 0 600 320\">. Each country feature has properties.name (English).",
+      "scripts": [
+        "d3.min.js",
+        "topojson-client.min.js",
+        "countries-110m.js"
+      ],
+      "styles": [],
+      "files": [
+        {
+          "name": "d3.min.js",
+          "from": "d3@7.9.0/dist/d3.min.js",
+          "sha256": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539",
+          "bytes": 279706
+        },
+        {
+          "name": "topojson-client.min.js",
+          "from": "topojson-client@3.1.0/dist/topojson-client.min.js",
+          "sha256": "25cd02ae486cc5063e0215a4e4cfb15de83700c87ac48bac4d57dc6aaf3ebb89",
+          "bytes": 7169
+        },
+        {
+          "name": "countries-110m.js",
+          "from": "world-atlas@2.0.2/countries-110m.json",
+          "transform": "json-global:WORLD_110M",
+          "sha256": "7e10ed107da67ce20ff148421261b38772fcfcb3cc96ed3a0b6171738b734859",
+          "bytes": 107782
+        },
+        {
+          "name": "LICENSE-d3.txt",
+          "from": "d3@7.9.0/LICENSE",
+          "sha256": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4",
+          "bytes": 731
+        },
+        {
+          "name": "LICENSE-topojson-client.txt",
+          "from": "topojson-client@3.1.0/LICENSE",
+          "sha256": "4c4d15b635e04e691825a76db7d33f7f2033b55669a7430011694f31e6c65999",
+          "bytes": 734
+        },
+        {
+          "name": "LICENSE-world-atlas.txt",
+          "from": "world-atlas@2.0.2/LICENSE",
+          "sha256": "8048290dfdb6e83fbed17e8985c8cfc4ce9da9b842642f3d3e497280790cfa31",
+          "bytes": 734
+        }
+      ]
+    },
+    {
+      "id": "chess",
+      "name": "Chess rules",
+      "category": "extra",
+      "summary": "Knows the rules of chess, so a lesson's board can check moves and puzzles.",
+      "for": "Chess",
+      "licence": "BSD-2-Clause",
+      "credit": "chess.js 0.13.4",
+      "hint": "chess.js 0.13 as the global Chess (move rules only; draw the board yourself with SVG or a grid of buttons). const g = new Chess(fen); g.moves({verbose: true}); g.move({from: \"e2\", to: \"e4\"}) returns null for an illegal move; g.fen(), g.in_check(), g.in_checkmate(), g.board().",
+      "scripts": [
+        "chess.js"
+      ],
+      "styles": [],
+      "files": [
+        {
+          "name": "chess.js",
+          "from": "chess.js@0.13.4/chess.js",
+          "transform": "esm-global:Chess",
+          "sha256": "4291580e12a811e47f5b60b5e6ebc6f613aa140c289975b770dc881fe96166b8",
+          "bytes": 56041
+        },
+        {
+          "name": "LICENSE.txt",
+          "from": "chess.js@0.13.4/LICENSE",
+          "sha256": "af8822366b6f5ce7b4b8b679ba4367823e8bb405f8c963e5d33ab61d1a6a12bb",
+          "bytes": 1315
+        }
+      ]
+    }
+  ]
+}

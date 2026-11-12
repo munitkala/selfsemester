@@ -5,6 +5,41 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
+### Tools you choose
+
+**Why:** a chemistry course is better with molecules you can turn, a geography course with maps, a music course with
+sheet music. Building all of that into the app would make it bigger for everyone, including people who never study
+those subjects.
+
+- Right after installing, SelfSemester asks what you plan to study and offers the common tools for it: geometry and
+  graphing, sheet music, 3D molecules and world maps. Pick any, or none.
+- When Claude plans a course, it names any tools the lessons would use. If one isn't installed, the review step asks
+  whether to install it for that course; untick it and the course is written without it. Some tools are only offered
+  this way, such as chess rules for a chess course.
+- Settings has a new **Tools** section listing everything the app uses in plain words, including what's built in.
+  Common tools can be installed or removed there at any time. A tool installed for one course leaves the list once
+  you remove it; a course that needs it again will ask.
+- Tools can't be changed while a course is being built or Claude is working, so a course is never written against a
+  tool that disappears halfway through.
+- Tools download from the SelfSemester project on GitHub, and each file is checked against the copy the app expects
+  before it's used. They run only inside the sealed frames of interactive figures. A computer without internet can
+  install them from a `tool-packs` folder in the app's data folder.
+- Lessons that use a tool you've removed show a short note in its place.
+
+### Figures you can try
+
+**Why:** some ideas only click when you move something and watch what changes: a slope, an angle, a circuit, the
+steps of an algorithm. A still picture can't show that, and adding a separate tool for each subject would make the
+app bigger for everyone.
+
+- Lessons can include interactive figures: sliders, small simulations, boards to click on and drills that check
+  themselves. They're numbered and captioned like the other figures and follow the theme, light or dark.
+- Course writers make them as part of the lesson, in plain HTML and JavaScript, so new kinds of activity need no app
+  update and no extra downloads.
+- Each one runs sealed off in its own frame: no internet, no access to your files, the app or the rest of the page,
+  and no way to send itself somewhere else. The check after each unit looks at them too.
+- No new libraries.
+
 ### Lessons you can hear
 
 **Why:** a language lesson that explains tones or a tricky sound in writing, then sends you to look up recordings

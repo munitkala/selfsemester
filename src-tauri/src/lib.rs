@@ -3,6 +3,8 @@ pub mod claude;
 pub mod course;
 pub mod db;
 pub mod paths;
+pub mod tools;
+pub mod widget;
 pub mod worker;
 
 use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
@@ -419,6 +421,51 @@ fn course_audio(state: tauri::State<'_, AppState>, course_id: String, file: Stri
     Ok(tauri::ipc::Response::new(std::fs::read(path).map_err(err)?))
 }
 
+/// Keep an interactive figure's HTML for its sandboxed frame; returns the id the frame loads (see widget.rs).
+#[tauri::command]
+fn widget_put(store: tauri::State<'_, widget::Store>, html: String, tools: Option<Vec<String>>) -> Res<String> {
+    store.put(&html, &tools.unwrap_or_default())
+}
+
+// ---------- tools (see tools.rs) ----------
+
+#[tauri::command]
+fn tools_view(state: tauri::State<'_, AppState>) -> tools::ToolsView {
+    tools::view(&state.paths, &state.db.lock().unwrap())
+}
+
+#[tauri::command]
+async fn tool_install(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    let guard = tools::begin(&state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    let paths = state.paths.clone();
+    // Downloads take a moment; keep them off the UI thread.
+    let result = tauri::async_runtime::spawn_blocking(move || tools::install(&paths, &id, tools::default_source(&paths).as_ref()))
+        .await
+        .map_err(err)
+        .and_then(|r| r);
+    drop(guard);
+    changed(&app);
+    result
+}
+
+#[tauri::command]
+fn tools_lookup(state: tauri::State<'_, AppState>, ids: Vec<String>) -> Vec<tools::ToolView> {
+    tools::lookup(&state.paths, &ids)
+}
+
+#[tauri::command]
+fn tool_remove(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    tools::remove(&state.paths, &state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn tools_setup_done(state: tauri::State<'_, AppState>) -> Res<()> {
+    db::set_setting(&state.db.lock().unwrap(), tools::SETUP_SETTING, "1").map_err(err)
+}
+
 #[tauri::command]
 fn audio_online(state: tauri::State<'_, AppState>) -> Res<bool> {
     Ok(db::get_setting(&state.db.lock().unwrap(), course::audio::ONLINE_SETTING).map_err(err)?.as_deref() != Some("0"))
@@ -508,6 +555,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { startup, paths, db, runner, sealer })
+        .manage(widget::Store::default())
+        .register_uri_scheme_protocol("widget", |ctx, request| {
+            use tauri::Manager;
+            let app = ctx.app_handle();
+            widget::respond(&app.state::<widget::Store>(), &app.state::<AppState>().paths, &request.uri().to_string())
+        })
         .setup(move |app| {
             worker.clone().spawn(Arc::new(TauriShell(app.handle().clone())));
             let (conn, handle) = (audio_db.clone(), app.handle().clone());
@@ -520,6 +573,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             course_audio,
+            widget_put,
+            tools_view,
+            tools_lookup,
+            tool_install,
+            tool_remove,
+            tools_setup_done,
             audio_online,
             set_audio_online,
             app_status,

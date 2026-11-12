@@ -10,6 +10,9 @@
   import { apply, prefs, save, watchSystem } from "#lib/prefs.svelte.ts";
   import Icon from "#lib/Icon.svelte";
   import CommandPalette from "#lib/CommandPalette.svelte";
+  import { widgets } from "#lib/widgets.ts";
+  import ToolSetup from "#lib/ToolSetup.svelte";
+  import type { ToolsView } from "#lib/api.ts";
 
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);
@@ -19,10 +22,13 @@
   let noticeOk = $state<boolean | null>(null);
   let agreed = $state(false);
   let palette = $state(false);
+  // First-run tool picker, shown once after the terms are accepted.
+  let toolSetup = $state<ToolsView | null>(null);
 
   async function acceptNotice() {
     await api.acceptNotice();
     noticeOk = true;
+    api.tools().then((v) => (toolSetup = v)).catch(() => {});
   }
 
   const nav = [
@@ -80,7 +86,10 @@
     }
     document.addEventListener("click", externalLinks);
     document.addEventListener("keydown", shortcuts);
-    api.noticeAccepted().then((ok) => (noticeOk = ok)).catch(() => (noticeOk = false));
+    api.noticeAccepted().then((ok) => {
+      noticeOk = ok;
+      if (ok) api.tools().then((v) => (toolSetup = v)).catch(() => {});
+    }).catch(() => (noticeOk = false));
     api
       .status()
       .then((s) => {
@@ -103,6 +112,10 @@
     };
   });
 </script>
+
+{#if noticeOk && toolSetup && !toolSetup.setup_done}
+  <ToolSetup tools={toolSetup.tools} ondone={() => (toolSetup = null)} />
+{/if}
 
 {#if noticeOk === false}
   <div class="notice-backdrop">
@@ -127,7 +140,7 @@
 
 <svelte:window bind:innerWidth={windowWidth} />
 
-<div class="shell" class:compact inert={noticeOk === false}>
+<div class="shell" class:compact inert={noticeOk === false || !!(noticeOk && toolSetup && !toolSetup.setup_done)}>
   <aside>
     <div class="brand">
       <span class="mark" aria-hidden="true">S</span>
@@ -177,7 +190,7 @@
       {/if}
     </div>
   </aside>
-  <main class:reading>
+  <main class:reading use:widgets>
     {#if restored}
       <p class="note">Your data was missing when SelfSemester started, so it restored your newest backup (from {when(restored)}). <a href="/settings">Settings</a> <button class="ghost small" onclick={() => (restored = null)}>OK</button></p>
     {/if}
@@ -191,7 +204,7 @@
 <CommandPalette bind:open={palette} />
 
 <style>
-  .notice-backdrop {
+  :global(.notice-backdrop) {
     position: fixed;
     inset: 0;
     z-index: 50;
@@ -201,7 +214,7 @@
     padding: 1rem;
     overflow-y: auto;
   }
-  .notice {
+  :global(.notice) {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: var(--radius);
@@ -209,24 +222,24 @@
     max-width: 40rem;
     box-shadow: 0 10px 40px rgb(0 0 0 / 0.18);
   }
-  :global([data-effects="full"]) .notice-backdrop {
+  :global([data-effects="full"] .notice-backdrop) {
     background: color-mix(in srgb, var(--bg) 70%, transparent);
     backdrop-filter: blur(4px);
   }
-  .notice ul {
+  :global(.notice ul) {
     padding-left: 1.2rem;
   }
-  .notice li {
+  :global(.notice li) {
     margin: 0.45rem 0;
   }
-  .agree {
+  :global(.notice .agree) {
     display: flex;
     gap: 0.5rem;
     align-items: center;
     font-weight: 600;
     margin: 1rem 0;
   }
-  .agree input {
+  :global(.notice .agree input) {
     width: auto;
   }
   .shell {

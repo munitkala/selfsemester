@@ -4,6 +4,7 @@
   import { when } from "#lib/format.ts";
   import DisplaySettings from "#lib/DisplaySettings.svelte";
   import PatchNotes from "#lib/PatchNotes.svelte";
+  import ToolList from "#lib/ToolList.svelte";
 
   const sections = [
     { id: "whats-new", label: "What's new" },
@@ -12,6 +13,7 @@
     { id: "performance", label: "Motion and performance" },
     { id: "study", label: "Study and goals" },
     { id: "shortcuts", label: "Shortcuts" },
+    { id: "tools", label: "Tools" },
     { id: "sounds", label: "Lesson sounds" },
     { id: "claude", label: "Claude Code" },
     { id: "data", label: "Data and backups" },
@@ -98,6 +100,15 @@
 <PatchNotes />
 
 <DisplaySettings />
+
+<section class="card" id="tools">
+  <h2>Tools</h2>
+  <p class="small muted">
+    What SelfSemester uses to show lessons. Downloads come from the SelfSemester project on GitHub and are checked
+    before they're used. Lessons that use a tool you remove show a short note in its place.
+  </p>
+  <ToolList />
+</section>
 
 <section class="card" id="sounds">
   <h2>Lesson sounds</h2>

@@ -36,6 +36,9 @@ pub struct Plan {
     pub domain_family: String,
     /// Inputs the course would need that the app can't capture yet (e.g. audio, camera, code runner).
     pub unsupported_inputs: Vec<String>,
+    /// Tools from tools/catalog.json the lessons would use; the review step offers to install missing ones.
+    #[serde(default)]
+    pub tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

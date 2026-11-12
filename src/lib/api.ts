@@ -37,6 +37,20 @@ export type BackupInfo = {
   manifest: { created_at: string; reason: string; from_version: string | null; app_version: string; schema_version: number } | null;
 };
 
+export type Tool = {
+  id: string;
+  name: string;
+  category: "built-in" | "common" | "extra";
+  summary: string;
+  for: string;
+  licence: string;
+  credit: string;
+  installed: boolean;
+  /** Download size in bytes (0 for built-ins). */
+  size: number;
+};
+export type ToolsView = { tools: Tool[]; locked: string | null; setup_done: boolean; installing: string[] };
+
 export type AppStatus = { startup: StartupInfo; claude: ClaudeStatus; data_dir: string; user_dir: string; schema_version: number; jobs: JobSummary };
 
 export type CourseMeta = {
@@ -102,6 +116,8 @@ export type Plan = {
   };
   domain_family: string;
   unsupported_inputs: string[];
+  /** Tools the lessons would use (tools/catalog.json ids); missing ones are offered at review. */
+  tools?: string[];
 };
 
 export type LatePolicy = { kind: "lock_zero" } | { kind: "penalty"; per_day: number; max_days: number };
@@ -269,6 +285,11 @@ export const api = {
   item: (id: string) => invoke<ItemView>("get_item", { id }),
   audioOnline: () => invoke<boolean>("audio_online"),
   setAudioOnline: (on: boolean) => invoke<void>("set_audio_online", { on }),
+  tools: () => invoke<ToolsView>("tools_view"),
+  toolsLookup: (ids: string[]) => invoke<Tool[]>("tools_lookup", { ids }),
+  installTool: (id: string) => invoke<void>("tool_install", { id }),
+  removeTool: (id: string) => invoke<void>("tool_remove", { id }),
+  toolsSetupDone: () => invoke<void>("tools_setup_done"),
   markRead: (id: string) => invoke<void>("mark_lesson_read", { id }),
   submit: (id: string, textAnswer: string, answers: Record<string, string>, files: string[]) =>
     invoke<{ submission_id: string; status: string; late_days: number }>("submit_item", { id, textAnswer, answers, files }),

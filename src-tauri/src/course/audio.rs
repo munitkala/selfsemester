@@ -212,7 +212,7 @@ pub trait Voice: Send + Sync {
     fn speak(&self, lang: &str, text: &str, out: &Path) -> Result<Option<String>, String>;
 }
 
-fn hidden(cmd: &mut std::process::Command) {
+pub(crate) fn hidden(cmd: &mut std::process::Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -222,7 +222,7 @@ fn hidden(cmd: &mut std::process::Command) {
     let _ = cmd;
 }
 
-fn system_tool(windows_rel: &str, other: &str) -> PathBuf {
+pub(crate) fn system_tool(windows_rel: &str, other: &str) -> PathBuf {
     match std::env::var_os("SystemRoot").map(|root| Path::new(&root).join(windows_rel)) {
         Some(p) if cfg!(windows) && p.is_file() => p,
         _ => PathBuf::from(other),

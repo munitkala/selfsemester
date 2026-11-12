@@ -85,6 +85,18 @@ Each clip is exactly one of:
 - another sound: "sound" is a short search phrase for a real recording ("song of the European robin", "normal heart sounds").
 Every clip can have a "label" (what to listen for, shown next to the play button) and "commons", a Wikimedia Commons file name when you know one that fits exactly ("Zh-xièxie.ogg"); the app checks it. The app finds a freely licensed recording by a native speaker for each clip and credits its author, and only when none exists reads speech with a computer voice or synthesises the notes, so never claim a recording is by a native speaker. Don't link to audio elsewhere or tell the learner to search for pronunciations: put the clips in the lesson. Refer to blocks in the text ("listen to the tones below") and say what to notice. For a listening test, add "test": true to the block: the app then hides romanisations and labels (keep them in the JSON so recordings can be found) and you give the answers in the text after it. Lessons only: questions and answer keys can't play sounds yet."#;
 
+/// How to put interactive figures in a lesson. Shown in a sandboxed frame with no network (src/widget.rs,
+/// src/lib/widgets.ts) and numbered with the other figures.
+pub const WIDGETS_GUIDE: &str = r#"INTERACTIVE FIGURES. Where a learner understands by trying things rather than reading (moving a slider to see a graph, angle or circuit change, stepping through an algorithm, a small simulation, placing pieces on a board, a drill that checks itself), add an interactive figure. Use them where they teach something a still figure can't, at most a few per lesson, and prefer a plot or diagram when nothing needs to move. Each is a fenced block on its own:
+```widget
+caption: Change the slope m and the intercept c and watch the line move
+height: 300
+<label>m <input id="m" type="range" min="-3" max="3" step="0.1" value="1"></label> <span id="eq"></span>
+<svg id="g" viewBox="0 0 400 240"></svg>
+<script>/* draw with plain JavaScript */</script>
+```
+The body is a fragment of HTML with inline <script> and <style>, written by you for this lesson. It runs in a sealed frame: plain JavaScript, SVG, canvas and HTML controls, no libraries except the installed TOOLS listed below, no network (no fetch, images, fonts or links from the internet), no storage, and nothing outside the frame. Embed any small data inline. Use the theme's colours through CSS variables so it reads in light and dark themes: var(--text), var(--muted), var(--line), var(--panel), var(--accent), var(--good), var(--bad) and var(--chart-1) to var(--chart-6); plain buttons, sliders and inputs are styled already. "height" is the starting height in pixels (the frame grows to fit). Keep it small (under 30 KB), make it work with mouse and keyboard, show the current value next to every slider, and check that the maths or physics it computes is right. Refer to it by its figure number like any other figure and say what to try and what to notice. Lessons only."#;
+
 /// The app can currently capture these kinds of work.
 pub const SUPPORTED_MODULES: &str = "written answers (typed text, Markdown, LaTeX), photo or PDF uploads \
 (e.g. handwritten working), and auto-marked quizzes (multiple choice, numeric). Not yet supported: audio recording, \
@@ -175,6 +187,7 @@ pub fn plan_schema() -> Value {
         ),
         ("domain_family", s()),
         ("unsupported_inputs", arr(s())),
+        ("tools", arr(s())),
     ])
 }
 
@@ -199,6 +212,8 @@ pub fn plan(subject: &str, notes: &str, answers: &Value, bundle_choice: Option<&
          - Weights: share of the final grade per kind, summing to 1 (use 0 for kinds you won't use).\n\
          - The app can capture: {SUPPORTED_MODULES} List anything this course needs beyond that in \
            unsupported_inputs and plan a reduced version without it.\n\
+         - tools: the ids of any of these optional tools the lessons would clearly use, or none. The learner is asked \
+           before anything is installed, so list only what makes a real difference to this course:\n{catalog}\n\
          - mode 'online' if the learner needs internet, accounts or software during the course; list each in \
            dependencies.\n\
          - Readiness report: rough estimates of how well you can DELIVER this course (lesson accuracy, coverage by \
@@ -208,7 +223,8 @@ pub fn plan(subject: &str, notes: &str, answers: &Value, bundle_choice: Option<&
          - If mistakes in this subject could cause harm (health, medicine, law, money, electrical or mechanical \
            work, chemistry, driving, flying, safety), make the FIRST weak spot say plainly that the course is \
            general self-study, not professional advice or training, and that anything acted on must be checked \
-           with a qualified professional."
+           with a qualified professional.",
+        catalog = crate::tools::plan_catalog()
     );
     req(Tier::Opus, HOUSE_RULES, prompt, plan_schema(), &[])
 }
@@ -301,7 +317,8 @@ fn course_context(plan: &Plan, sources: &[SourceEntry]) -> String {
     )
 }
 
-pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Option<&str>) -> StageRequest {
+/// `tools`: how lessons can use the installed tools (tools::lesson_guide).
+pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Option<&str>, tools: &str) -> StageRequest {
     let u = plan.units.iter().find(|u| u.key == unit_key).expect("unit in plan");
     let exam_tier = if u.exam == "none" { Tier::Sonnet } else { Tier::Opus };
     let exam_line = match u.exam.as_str() {
@@ -329,7 +346,7 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
          - answer_key: a full worked answer for EVERY question (this stays sealed and is used for marking).\n\
          - due_days: 2-14 days after release, matching the workload; quizzes 2-4, exams 1-3.\n\
          - The app can capture: {SUPPORTED_MODULES} Don't set work it can't capture. Questions and answer keys can \
-           use figures too, in the same format.\n\n{FIGURES_GUIDE}\n\n{AUDIO_GUIDE}",
+           use figures too, in the same format.\n\n{FIGURES_GUIDE}\n\n{WIDGETS_GUIDE}\n\n{tools}\n\n{AUDIO_GUIDE}",
         ctx = course_context(plan, sources),
         key = u.key,
         title = u.title,
@@ -364,7 +381,9 @@ pub fn validate(plan: &Plan, unit_key: &str, content: &UnitContent) -> StageRequ
          example a graph described only in words)? For every ```audio block: is it valid JSON, does each clip's \"say\" \
          text, romanisation (with correct tone or accent marks) and language tag match what the lesson teaches, and \
          are the notes right for any interval, chord or scale it names? Would audio be clearly needed where there is \
-         none (a language lesson that teaches sounds or words without clips)? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
+         none (a language lesson that teaches sounds or words without clips)? For every ```widget block: \
+         does its script run without errors, is what it computes correct, does it stay inside its frame (no \
+         network, libraries or storage), and does the text say what to try? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
          errors, 'minor' for wording. ok=true only if there are no major issues.",
         plan.title,
         serde_json::to_string(content).unwrap_or_default()
@@ -479,7 +498,7 @@ pub(crate) mod tests {
     #[test]
     fn lessons_are_asked_for_figures_and_checked_for_them() {
         let plan: Plan = serde_json::from_value(sample_plan()).unwrap();
-        let unit = unit(&plan, &[], "u01", None);
+        let unit = unit(&plan, &[], "u01", None, &crate::tools::lesson_guide(&crate::tools::catalog().tools.iter().filter(|t| t.id == "maps").collect::<Vec<_>>()));
         assert!(unit.prompt.contains("```plot") && unit.prompt.contains("```diagram"));
         assert!(unit.prompt.contains("Subject family: theory-maths"));
         assert!(unit.prompt.contains("never reproduce them"));
@@ -492,6 +511,10 @@ pub(crate) mod tests {
         assert!(check.prompt.contains("For every figure"));
         assert!(check.prompt.contains("For every ```audio block"));
         assert!(unit.prompt.contains("```audio") && unit.prompt.contains("\"romanization\""));
+        assert!(unit.prompt.contains("```widget") && check.prompt.contains("For every ```widget block"));
+        assert!(unit.prompt.contains("tools: <id>") && unit.prompt.contains("WORLD_110M"), "installed tools are described");
+        let p = super::plan("Geography", "", &json!({}), None);
+        assert!(p.prompt.contains("- maps: ") && p.prompt.contains("- chess: ") && !p.prompt.contains("- maths: "));
         assert!(unit.prompt.contains("never claim a recording is by a native speaker"));
     }
 
@@ -500,8 +523,8 @@ pub(crate) mod tests {
         assert!(intake("x", "").tools.is_empty());
         let p: Plan = serde_json::from_value(sample_plan()).unwrap();
         assert_eq!(sources(&p).tools, vec!["WebSearch", "WebFetch"]);
-        assert!(unit(&p, &[], "u01", None).tools.is_empty());
-        assert_eq!(unit(&p, &[], "u02", None).tier, Tier::Opus); // final exam unit
+        assert!(unit(&p, &[], "u01", None, "").tools.is_empty());
+        assert_eq!(unit(&p, &[], "u02", None, "").tier, Tier::Opus); // final exam unit
     }
 
     pub fn sample_plan() -> Value {

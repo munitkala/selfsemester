@@ -200,8 +200,9 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             }
             let plan = plan_of(conn, &id)?;
             let srcs = sources_of(conn, &id)?;
+            let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
             for u in &plan.units {
-                let mut req = prompts::unit(&plan, &srcs, &u.key, None);
+                let mut req = prompts::unit(&plan, &srcs, &u.key, None, &tool_guide);
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
             }
@@ -224,7 +225,7 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
                 let plan = plan_of(conn, &id)?;
                 let srcs = sources_of(conn, &id)?;
                 let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
-                let mut req = prompts::unit(&plan, &srcs, &key, Some(&fb));
+                let mut req = prompts::unit(&plan, &srcs, &key, Some(&fb), &crate::tools::lesson_guide(&crate::tools::installed(paths)));
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
                 conn.execute("UPDATE units SET state='pending' WHERE course_id=?1 AND unit_key=?2", params![id, key]).map_err(io)?;
@@ -559,7 +560,7 @@ mod live_tests {
         assert!(!src.sources.is_empty());
 
         let key = plan.units[0].key.clone();
-        let unit: UnitContent = serde_json::from_value(run("4-unit", &prompts::unit(&plan, &src.sources, &key, None))).unwrap();
+        let unit: UnitContent = serde_json::from_value(run("4-unit", &prompts::unit(&plan, &src.sources, &key, None, ""))).unwrap();
         assert!(!unit.items.is_empty());
         let _v: Validation = serde_json::from_value(run("5-validate", &prompts::validate(&plan, &key, &unit))).unwrap();
         println!("saved to {}", out_dir.display());
@@ -611,7 +612,7 @@ mod live_tests {
         let work = tempfile::tempdir().unwrap();
         let r = CliRunner::new(work.path().to_path_buf());
         let t = std::time::Instant::now();
-        let o = r.run(&prompts::unit(&plan, &sources, "u01", None)).unwrap_or_else(|e| panic!("unit: {e}"));
+        let o = r.run(&prompts::unit(&plan, &sources, "u01", None, "")).unwrap_or_else(|e| panic!("unit: {e}"));
         println!("{which} unit: {} in {:.0}s, out {} tokens", o.model, t.elapsed().as_secs_f64(), o.usage.output_tokens);
         let mut unit_value = o.value;
         let mut unit: UnitContent = serde_json::from_value(unit_value.clone()).unwrap();
@@ -622,7 +623,7 @@ mod live_tests {
         if !major.is_empty() {
             let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
             println!("{which}: {} major issue(s), rewriting", major.len());
-            unit_value = r.run(&prompts::unit(&plan, &sources, "u01", Some(&fb))).unwrap_or_else(|e| panic!("rewrite: {e}")).value;
+            unit_value = r.run(&prompts::unit(&plan, &sources, "u01", Some(&fb), "")).unwrap_or_else(|e| panic!("rewrite: {e}")).value;
             unit = serde_json::from_value(unit_value.clone()).unwrap();
             v = r.run(&prompts::validate(&plan, "u01", &unit)).unwrap_or_else(|e| panic!("validate: {e}"));
         }

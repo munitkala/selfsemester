@@ -1,12 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, live, type CourseView, type LatePolicy, type Strictness } from "#lib/api.ts";
+  import { api, live, type CourseView, type LatePolicy, type Strictness, type Tool } from "#lib/api.ts";
   import StrictnessChoice from "#lib/StrictnessChoice.svelte";
   import Materials from "#lib/Materials.svelte";
   import Classroom from "#lib/Classroom.svelte";
   import ProgressBar from "#lib/Progress.svelte";
-  import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel } from "#lib/format.ts";
+  import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel, size } from "#lib/format.ts";
 
   const id = $derived(page.params.id ?? "");
   let c = $state<CourseView | null>(null);
@@ -23,6 +23,25 @@
   let onTranscript = $state(true);
   let strictness = $state<Strictness>("structured");
   let confirmDelete = $state(false);
+  // Tools the plan asks for. Missing ones are installed before the course is built, if the learner says so.
+  let tools = $state<Tool[]>([]);
+  let wantTool = $state<Record<string, boolean>>({});
+  let installing = $state<string | null>(null);
+  let toolsFor = "";
+  $effect(() => {
+    const ids = c?.status === "review" ? (c.plan?.tools ?? []) : [];
+    const k = ids.join(",");
+    if (k === toolsFor) return;
+    toolsFor = k;
+    if (!ids.length) {
+      tools = [];
+      return;
+    }
+    api.toolsLookup(ids).then((t) => {
+      tools = t;
+      for (const x of t) if (!x.installed && wantTool[x.id] === undefined) wantTool[x.id] = true;
+    }).catch(() => (tools = []));
+  });
 
   $effect(() => {
     const courseId = id;
@@ -57,7 +76,19 @@
   function approve(e: Event) {
     e.preventDefault();
     const policy: LatePolicy = lateKind === "lock_zero" ? { kind: "lock_zero" } : { kind: "penalty", per_day: perDay, max_days: maxDays };
-    act(() => api.approve(id, startDate, policy, strictness, onTranscript));
+    act(async () => {
+      for (const t of tools.filter((t) => !t.installed && wantTool[t.id])) {
+        installing = t.name;
+        try {
+          await api.installTool(t.id);
+        } catch (e) {
+          throw `${t.name} couldn't be installed (${e}). Untick it to build the course without it, or try again.`;
+        } finally {
+          installing = null;
+        }
+      }
+      await api.approve(id, startDate, policy, strictness, onTranscript);
+    });
   }
 
   async function remove() {
@@ -190,6 +221,22 @@
       {/if}
       {#if plan.unsupported_inputs.length}
         <p class="note">This version leaves out work the app can't capture yet: {plan.unsupported_inputs.map((s) => s.replace(/[.\s]+$/, "")).join("; ")}.</p>
+      {/if}
+      {#if tools.length}
+        <h3>Tools for this course</h3>
+        <p class="small muted">The lessons would use these. Untick any you don't want; the course is then written without it.</p>
+        <ul class="course-tools">
+          {#each tools as t (t.id)}
+            <li>
+              {#if t.installed}
+                <span><strong>{t.name}</strong>: {t.summary} <span class="small muted">(installed)</span></span>
+              {:else}
+                <label class="radio"><input type="checkbox" bind:checked={wantTool[t.id]} disabled={busy} /> <span><strong>Install {t.name}</strong> ({size(t.size)}): {t.summary}</span></label>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        {#if installing}<p class="small" aria-live="polite">Installing {installing}…</p>{/if}
       {/if}
     </section>
 
@@ -433,4 +480,5 @@
   .note p {
     margin: 0 0 0.5rem;
   }
+  .course-tools { list-style: none; padding: 0; display: grid; gap: 0.4rem; }
 </style>

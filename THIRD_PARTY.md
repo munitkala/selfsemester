@@ -14,6 +14,7 @@ at build time and keep their own licences; none of them are GPL or AGPL.
 | tauri-plugin-dialog | 2.8 | MIT OR Apache-2.0 | File picker for uploads |
 | rusqlite (bundled SQLite) | 0.41 | MIT (SQLite itself is public domain) | Database and full-text search |
 | aes-gcm | 0.10 | MIT OR Apache-2.0 | Sealing answer keys and exams on disk |
+| sha2 | 0.10 | MIT OR Apache-2.0 | Checking downloaded tools |
 | serde, serde_json | 1.0 | MIT OR Apache-2.0 | JSON |
 | chrono | 0.4 | MIT OR Apache-2.0 | Dates and deadlines |
 | dirs | 6 | MIT OR Apache-2.0 | Finding AppData and Documents |
@@ -34,6 +35,22 @@ crates' own files, which are used unmodified, and doesn't affect the rest of the
 | marked | 18.1 | MIT | Markdown rendering |
 | katex (including its fonts) | 0.19 | MIT | Maths rendering |
 | dompurify | 3.4 | MPL-2.0 OR Apache-2.0 (used under Apache-2.0) | Sanitising rendered HTML |
+
+## Optional tools (downloaded only if you install them)
+
+These aren't part of the app. They're published unmodified on this project's GitHub release (`tools-1`), each with
+its licence file, and downloaded only when you install the tool (see `tools/catalog.json`). The chess.js file is
+wrapped so it loads as a plain script; nothing else is changed.
+
+| Tool | Package | Version | Licence |
+| --- | --- | --- | --- |
+| Geometry and graphing | jsxgraph | 1.10.1 | MIT (dual-licensed MIT OR LGPL-3.0-or-later; used under MIT) |
+| Sheet music | abcjs | 6.4.4 | MIT |
+| 3D molecules | 3dmol | 2.4.2 | BSD-3-Clause |
+| World maps | d3 | 7.9.0 | ISC |
+| World maps | topojson-client | 3.1.0 | ISC |
+| World maps | world-atlas (data from Natural Earth, public domain) | 2.0.2 | ISC |
+| Chess rules | chess.js | 0.13.4 | BSD-2-Clause |
 
 Build-only tools (the Svelte and SvelteKit compilers, the static adapter, Vite, TypeScript, svelte-check) are MIT
 licensed and aren't shipped. `deepmerge` (MIT), pulled in by the Svelte build plugin, is build-only too.

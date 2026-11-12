@@ -7,8 +7,11 @@ export const patchNotes: PatchNote[] = [
   {
     version: "Next",
     date: "2026-11-12",
-    title: "Lessons you can hear",
+    title: "Lessons you can hear and try",
     notes: [
+      "Pick tools for what you study (geometry, sheet music, 3D molecules, maps) after installing, or later in Settings, Tools.",
+      "A course that needs a tool asks before installing it.",
+      "Interactive figures: sliders, small simulations and drills right in the lesson, sealed off from the internet and your files.",
       "Language, music and other lessons where sound matters have play buttons right where each sound is taught.",
       "Recordings by native speakers come from Wikimedia Commons, free to reuse and credited under each lesson.",
       "With no recording, a voice on your computer reads the word (marked as a computer voice), or the app makes the notes.",
