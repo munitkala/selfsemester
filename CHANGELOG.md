@@ -5,7 +5,29 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-Nothing yet.
+### Lessons you can hear
+
+**Why:** a language lesson that explains tones or a tricky sound in writing, then sends you to look up recordings
+yourself, isn't much of a lesson. Music and other courses where a sound is the thing being learned had the same gap.
+
+- Lessons can include sounds: a row of play buttons right where the text explains them, with the word in its own
+  script, its romanisation and what to listen for. Press a button again to stop it.
+- When Claude writes a course where hearing matters (every language course, music, and subjects such as bird calls
+  or heart sounds), it adds a clip for each new sound, tone, word and phrase. The check after each unit looks at the
+  clips too: the words, their tone or accent marks and the notes of any chord.
+- The app fills each clip in the background. It first looks for a recording on Wikimedia Commons, where Wiktionary
+  and Lingua Libre keep their pronunciations by native speakers, and only takes files whose licence allows reuse
+  (public domain, CC0, CC BY, CC BY-SA). For Mandarin it prefers mainland recordings unless the course teaches
+  Taiwanese Mandarin.
+- When there's no recording, the app makes one: a voice installed on the computer reads the words (the button is
+  marked "computer voice"), and notes and chords are synthesised by the app itself.
+- Recordings are saved with the course, so lessons play offline once they're filled. Each lesson lists the
+  recordings it uses, with their authors, licences and a link to each one's page.
+- A block of clips can be a listening test, which hides the romanisation and labels so you have to listen.
+- Settings has a new **Lesson sounds** section. Turning off "Find recordings on Wikimedia Commons" keeps the app
+  completely offline apart from Claude Code; then only computer voices and made notes are used.
+- The app needs no new libraries for this: downloads use the curl that comes with Windows, and speech uses Windows'
+  own voices.
 
 ## 0.6.0 (2026-11-12)
 

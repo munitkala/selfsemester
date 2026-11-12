@@ -12,6 +12,7 @@
   import Ring from "#lib/charts/Ring.svelte";
   import { trackStudy } from "#lib/study.ts";
   import FileList from "#lib/FileList.svelte";
+  import { audioPlayer, credits } from "#lib/audio.ts";
 
   const id = $derived(page.params.id ?? "");
   $effect(() => trackStudy(id));
@@ -217,7 +218,21 @@
     <div class="reader" class:focus bind:this={reader}>
       {#if focus}<button class="ghost exit" onclick={() => (focus = false)}>Exit reading mode</button>{/if}
       <FileList courseId={v.item.course_id} files={v.files ?? []} title="Lesson files" />
-      <article class="prose">{@html render(lessonBody)}</article>
+      <article class="prose" use:audioPlayer={v.item.course_id}>{@html render(lessonBody, v.audio ?? {})}</article>
+      {#if credits(v.audio ?? {}).length}
+        <details class="audio-credits small">
+          <summary>Sound credits</summary>
+          <p class="muted">Recordings from Wikimedia Commons, used under their free licences. Clips marked "computer voice" were read by this computer, and notes were synthesised by SelfSemester.</p>
+          <ul>
+            {#each credits(v.audio ?? {}) as c (c.file)}
+              <li>
+                {#if c.url}<a href={c.url}>{c.file.replace(/^audio\//, "")}</a>{:else}{c.file.replace(/^audio\//, "")}{/if}
+                <span class="muted">· {c.credit} · {c.licence}</span>
+              </li>
+            {/each}
+          </ul>
+        </details>
+      {/if}
       <div class="row end">
         {#if v.item.state === "open"}
           <button onclick={markRead}>I've finished this lesson</button>

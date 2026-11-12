@@ -12,6 +12,7 @@
     { id: "performance", label: "Motion and performance" },
     { id: "study", label: "Study and goals" },
     { id: "shortcuts", label: "Shortcuts" },
+    { id: "sounds", label: "Lesson sounds" },
     { id: "claude", label: "Claude Code" },
     { id: "data", label: "Data and backups" },
   ];
@@ -25,6 +26,12 @@
   let backingUp = $state(false);
   let backupMsg = $state<string | null>(null);
   let backupError = $state<string | null>(null);
+  let soundsOnline = $state(true);
+
+  async function setSoundsOnline(on: boolean) {
+    soundsOnline = on;
+    await api.setAudioOnline(on).catch(() => (soundsOnline = !on));
+  }
 
   async function loadBackups() {
     backups = await api.backups().catch(() => []);
@@ -74,6 +81,7 @@
   onMount(() => {
     refresh();
     loadBackups();
+    api.audioOnline().then((on) => (soundsOnline = on)).catch(() => {});
   });
 </script>
 
@@ -90,6 +98,21 @@
 <PatchNotes />
 
 <DisplaySettings />
+
+<section class="card" id="sounds">
+  <h2>Lesson sounds</h2>
+  <p class="small muted">
+    Lessons where hearing matters, such as languages and music, have sounds to play. For each one SelfSemester looks
+    for a freely licensed recording by a native speaker on Wikimedia Commons, which sends only the word or phrase it
+    is looking for. If none exists, a voice installed on this computer reads it, or the app makes the notes itself.
+    Recordings are saved with the course, so lessons play offline.
+  </p>
+  <label class="radio"><input type="checkbox" checked={soundsOnline} onchange={(e) => setSoundsOnline(e.currentTarget.checked)} /> Find recordings on Wikimedia Commons</label>
+  <p class="small muted">
+    With this off, only computer voices and made notes are used. To add a voice for a language, open Windows
+    Settings, then Time and language, then Speech.
+  </p>
+</section>
 
 <section class="card" id="claude" aria-live="polite">
   <div class="spread">

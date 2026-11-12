@@ -363,6 +363,54 @@ tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparen
 .figure-legend .key.dash { border-top-style: dashed; }
 .figure svg text { font-family: inherit; font-size: 13px; }
 .figure svg.drawn text:not([fill]) { fill: currentColor; }
+
+/* Sounds in lessons (see src/lib/audio.ts): a row of play buttons per block. */
+.audio-block { margin: 1.4rem 0; max-width: 42rem; }
+.audio-block .clips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.audio-block figcaption { margin-top: 0.5rem; font-size: 0.9rem; color: var(--muted); line-height: 1.5; }
+.audio-block figcaption strong { color: var(--text); }
+.clip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: left;
+  padding: 0.45rem 0.8rem 0.45rem 0.55rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font: inherit;
+  line-height: 1.25;
+}
+.clip:hover:not(:disabled) { border-color: var(--accent); filter: none; }
+.clip .play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+.clip .play::before {
+  content: "";
+  margin-left: 0.15rem;
+  border-style: solid;
+  border-width: 0.38rem 0 0.38rem 0.6rem;
+  border-color: transparent transparent transparent var(--accent);
+}
+.clip.playing .play::before { margin-left: 0; width: 0.62rem; height: 0.62rem; border: 0; background: var(--accent); border-radius: 2px; }
+.clip .words { display: flex; flex-direction: column; }
+.clip .say { font-size: 1.05rem; font-weight: 600; }
+.clip .rom { font-size: 0.9rem; }
+.clip .lab { font-size: 0.8rem; color: var(--muted); }
+.clip .tag { font-size: 0.7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.45rem; }
+.clip:disabled { opacity: 0.65; cursor: default; box-shadow: none; }
+.clip.pending .play::before, .clip.missing .play::before { border-color: transparent transparent transparent var(--muted); }
+.audio-credits { margin: 0 0 1.2rem; }
+.audio-credits summary { cursor: pointer; color: var(--muted); }
+.audio-credits ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
 .figure .plot .grid { stroke: var(--line); stroke-width: 1; }
 .figure .plot .axis { stroke: var(--muted); stroke-width: 1.4; }
 .figure .plot .tick { fill: var(--muted); font-size: 11px; }

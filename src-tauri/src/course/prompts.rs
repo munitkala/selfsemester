@@ -72,6 +72,19 @@ Draw with stroke="currentColor" and fill="none" (or fill="currentColor" for text
 
 Every figure needs a caption line. The app adds the number itself (Figure 1, Figure 2, ... in order of appearance), so don't write "Figure 1" in the caption. Refer to each figure in the text by that number, and explain what the learner should notice. If a figure is closely based on one in an openly licensed source (for example CC BY), add a line after the caption: "credit: Adapted from <title>, <author or organisation>, <licence>". For copyrighted figures, screenshots or photos, never reproduce them: draw an original figure that teaches the same idea, or tell the learner where to look ("see Figure 2.4 in <title>"). Write all maths in LaTeX, including symbols in captions ($F = ma$)."#;
 
+/// How to put sounds in a lesson. The app fills each clip itself (src/course/audio.rs): a freely licensed recording
+/// from Wikimedia Commons, otherwise a computer voice or synthesised notes.
+pub const AUDIO_GUIDE: &str = r#"AUDIO. Lessons can play sounds, and wherever hearing matters they are essential: every language course (each new sound, tone, word and phrase, so the learner never has to look up a pronunciation), music (intervals, chords, scales, rhythms), and subjects where a sound is the thing being learned (bird and animal calls, heart and lung sounds, engine faults, phonetics). Put an audio block right where the text explains the sound, and skip audio where it adds nothing. Each block is a fenced block on its own:
+```audio
+caption: The four tones on ma
+{"lang": "zh-CN", "clips": [{"say": "妈", "romanization": "mā", "label": "1st tone: mother"}, {"say": "麻", "romanization": "má", "label": "2nd tone: hemp"}]}
+```
+Each clip is exactly one of:
+- speech: "say" is the word or phrase in the language's own script, "romanization" its romanised form with tone or accent marks when the script isn't Latin (pinyin, romaji), and "lang" its BCP 47 tag (zh-CN, fr-FR, es-MX), set once on the block or per clip. One word or short phrase per clip (up to a short sentence), as a native speaker would say it, so a recording of it is likely to exist;
+- notes: "notes" is a list such as ["C4", "E4", "G4"] (sharps "F#4", flats "Bb3", "rest" for silence), played one after another, or together with "chord": true; "seconds" sets the length of each note;
+- another sound: "sound" is a short search phrase for a real recording ("song of the European robin", "normal heart sounds").
+Every clip can have a "label" (what to listen for, shown next to the play button) and "commons", a Wikimedia Commons file name when you know one that fits exactly ("Zh-xièxie.ogg"); the app checks it. The app finds a freely licensed recording by a native speaker for each clip and credits its author, and only when none exists reads speech with a computer voice or synthesises the notes, so never claim a recording is by a native speaker. Don't link to audio elsewhere or tell the learner to search for pronunciations: put the clips in the lesson. Refer to blocks in the text ("listen to the tones below") and say what to notice. For a listening test, add "test": true to the block: the app then hides romanisations and labels (keep them in the JSON so recordings can be found) and you give the answers in the text after it. Lessons only: questions and answer keys can't play sounds yet."#;
+
 /// The app can currently capture these kinds of work.
 pub const SUPPORTED_MODULES: &str = "written answers (typed text, Markdown, LaTeX), photo or PDF uploads \
 (e.g. handwritten working), and auto-marked quizzes (multiple choice, numeric). Not yet supported: audio recording, \
@@ -300,7 +313,8 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
     let prompt = format!(
         "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{fix}\n\
          - lesson.markdown: a complete self-study lesson (roughly {mins} minutes of reading): explanations, worked \
-           examples with full working, figures where the subject needs them (see FIGURES below), common mistakes, \
+           examples with full working, figures where the subject needs them (see FIGURES below), sound clips wherever \
+           hearing matters (see AUDIO below), common mistakes, \
            a short summary, and which reading-list sources to read (cite by title). Put lesson.sources_used = the \
            URLs you relied on. Subject family: {family}.\n\
          - items: the graded work released with this unit, using only kinds with a non-zero weight. Usually one \
@@ -315,7 +329,7 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
          - answer_key: a full worked answer for EVERY question (this stays sealed and is used for marking).\n\
          - due_days: 2-14 days after release, matching the workload; quizzes 2-4, exams 1-3.\n\
          - The app can capture: {SUPPORTED_MODULES} Don't set work it can't capture. Questions and answer keys can \
-           use figures too, in the same format.\n\n{FIGURES_GUIDE}",
+           use figures too, in the same format.\n\n{FIGURES_GUIDE}\n\n{AUDIO_GUIDE}",
         ctx = course_context(plan, sources),
         key = u.key,
         title = u.title,
@@ -347,7 +361,10 @@ pub fn validate(plan: &Plan, unit_key: &str, content: &UnitContent) -> StageRequ
          (re-check plotted functions, points and labels), does it have a caption, is it referred to by its number \
          (the app adds \"Figure N.\" to each caption itself, in order, so a caption without a number is correct), and is it original rather than a copy of a source's figure, screenshot or \
          logo? Is every formula written in LaTeX? Would a figure be clearly needed where there is none (for \
-         example a graph described only in words)? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
+         example a graph described only in words)? For every ```audio block: is it valid JSON, does each clip's \"say\" \
+         text, romanisation (with correct tone or accent marks) and language tag match what the lesson teaches, and \
+         are the notes right for any interval, chord or scale it names? Would audio be clearly needed where there is \
+         none (a language lesson that teaches sounds or words without clips)? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
          errors, 'minor' for wording. ok=true only if there are no major issues.",
         plan.title,
         serde_json::to_string(content).unwrap_or_default()
@@ -473,6 +490,9 @@ pub(crate) mod tests {
         .unwrap();
         let check = validate(&plan, "u01", &content);
         assert!(check.prompt.contains("For every figure"));
+        assert!(check.prompt.contains("For every ```audio block"));
+        assert!(unit.prompt.contains("```audio") && unit.prompt.contains("\"romanization\""));
+        assert!(unit.prompt.contains("never claim a recording is by a native speaker"));
     }
 
     #[test]

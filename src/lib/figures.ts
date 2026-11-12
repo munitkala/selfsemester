@@ -335,7 +335,7 @@ function cleanSvg(src: string): string {
 // ---------- captions and figure assembly ----------
 
 /** Plain text with $maths$, for captions and labels. */
-function inline(text: string): string {
+export function inline(text: string): string {
   return text
     .split(/(\$[^$\n]+\$)/g)
     .map((part, i) =>

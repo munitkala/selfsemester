@@ -414,6 +414,22 @@ fn open_course_file(app: AppHandle, state: tauri::State<'_, AppState>, course_id
 }
 
 #[tauri::command]
+fn course_audio(state: tauri::State<'_, AppState>, course_id: String, file: String) -> Res<tauri::ipc::Response> {
+    let path = course::audio::path_of(&state.paths, &course_id, &file)?;
+    Ok(tauri::ipc::Response::new(std::fs::read(path).map_err(err)?))
+}
+
+#[tauri::command]
+fn audio_online(state: tauri::State<'_, AppState>) -> Res<bool> {
+    Ok(db::get_setting(&state.db.lock().unwrap(), course::audio::ONLINE_SETTING).map_err(err)?.as_deref() != Some("0"))
+}
+
+#[tauri::command]
+fn set_audio_online(state: tauri::State<'_, AppState>, on: bool) -> Res<()> {
+    db::set_setting(&state.db.lock().unwrap(), course::audio::ONLINE_SETTING, if on { "1" } else { "0" }).map_err(err)
+}
+
+#[tauri::command]
 fn course_add_week(app: AppHandle, state: tauri::State<'_, AppState>, id: String, unit: builder::DraftUnit) -> Res<String> {
     let key = builder::add_week(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, unit)?;
     changed(&app);
@@ -486,6 +502,7 @@ pub fn run() {
 
     let worker = Arc::new(worker::Worker { paths: paths.clone(), db: db.clone(), runner: runner.clone(), sealer: sealer.clone() });
 
+    let (audio_paths, audio_db) = (paths.clone(), db.clone());
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -493,9 +510,18 @@ pub fn run() {
         .manage(AppState { startup, paths, db, runner, sealer })
         .setup(move |app| {
             worker.clone().spawn(Arc::new(TauriShell(app.handle().clone())));
+            let (conn, handle) = (audio_db.clone(), app.handle().clone());
+            course::audio::spawn(
+                audio_paths.clone(),
+                move || db::get_setting(&conn.lock().unwrap(), course::audio::ONLINE_SETTING).ok().flatten().as_deref() != Some("0"),
+                move || changed(&handle),
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            course_audio,
+            audio_online,
+            set_audio_online,
             app_status,
             run_test_stage,
             jobs_status,

@@ -1,6 +1,7 @@
 //! Courses: the compile pipeline, schedule, marking, and the read models the UI shows.
 
 pub mod attachments;
+pub mod audio;
 pub mod builder;
 pub mod insights;
 pub mod marking;
@@ -330,6 +331,8 @@ pub struct ItemView {
     pub content: Option<types::ItemPublic>,
     /// Documents attached to a lesson (courses written in the course builder).
     pub files: Vec<types::Attachment>,
+    /// The sounds found for a lesson's ```audio clips, by clip id (b0c0, b0c1, ...). Missing ids aren't filled yet.
+    pub audio: std::collections::BTreeMap<String, audio::Found>,
     pub submission: Option<Value>,
     pub mark: Option<Value>,
     /// Shown only after the item is marked.
@@ -368,6 +371,7 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
     let released = row.state != "locked";
     let (mut lesson, mut content) = (None, None);
     let mut files: Vec<types::Attachment> = vec![];
+    let mut sounds = std::collections::BTreeMap::new();
     if released {
         if row.kind == "lesson" {
             lesson = Some(std::fs::read_to_string(dir.join(&content_ref)).map_err(|e| e.to_string())?);
@@ -376,6 +380,7 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
                 .ok()
                 .and_then(|t| serde_json::from_str(&t).ok())
                 .unwrap_or_default();
+            sounds = audio::load(&dir, key);
         } else {
             content = Some(sealer.read_json(&dir.join(&content_ref)).map_err(|e| e.to_string())?);
         }
@@ -454,6 +459,7 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         lesson,
         content,
         files,
+        audio: sounds,
         submission,
         mark,
         answer_key,

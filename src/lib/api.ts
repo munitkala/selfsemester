@@ -1,3 +1,4 @@
+import type { Found } from "#lib/audio.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -150,6 +151,8 @@ export type ItemView = {
   content: { title: string; kind: string; module: string; instructions: string; questions: Question[]; rubric: RubricLine[]; files?: Attachment[] } | null;
   /** Documents attached to a lesson. */
   files: Attachment[];
+  /** What the app found for each of the lesson's sound clips, by clip id. Clips not listed are still being filled. */
+  audio: Record<string, Found>;
   submission: {
     id: string;
     submitted_at: string;
@@ -264,6 +267,8 @@ export const api = {
   openMaterial: (id: string) => invoke<void>("open_material", { id }),
   today: () => invoke<Today>("today"),
   item: (id: string) => invoke<ItemView>("get_item", { id }),
+  audioOnline: () => invoke<boolean>("audio_online"),
+  setAudioOnline: (on: boolean) => invoke<void>("set_audio_online", { on }),
   markRead: (id: string) => invoke<void>("mark_lesson_read", { id }),
   submit: (id: string, textAnswer: string, answers: Record<string, string>, files: string[]) =>
     invoke<{ submission_id: string; status: string; late_days: number }>("submit_item", { id, textAnswer, answers, files }),

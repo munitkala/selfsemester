@@ -49,6 +49,12 @@ were.
   screenshots, logos or icons, and product names are used only to say what the course is about. These steps reduce the
   risk of reproducing someone else's work but can't rule it out: generated content can still resemble existing
   material. If something looks copied, don't share it, and report it as described below.
+- **Sounds in lessons.** Recordings in lessons come from Wikimedia Commons, and only ones published under a licence
+  that allows reuse (public domain, CC0, CC BY or CC BY-SA) are used. Each lesson lists the recordings it uses with
+  their authors and licences, and the files stay on your computer for your own study. When no recording exists, the
+  clip is read by a voice installed on your computer and marked "computer voice", or the notes are synthesised by the
+  app. Computer voices can mispronounce words and get tones or stress wrong, and Commons recordings are made by
+  volunteers and can contain mistakes, so check anything that sounds wrong with a teacher or a native speaker.
 - Trademarks and product names belong to their owners. Mentioning an app or product in a course doesn't mean its
   maker is involved with or endorses SelfSemester.
 - You are responsible for making sure your own use complies with copyright law and the terms of the websites you use.

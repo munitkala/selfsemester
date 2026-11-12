@@ -22,6 +22,9 @@ You can also write a course yourself in the **course builder**, with no Claude a
 - **Courses written for you**, planned around your goals, with a readiness report before anything is built
 - **Lessons with figures**: maths in LaTeX, graphs the app draws exactly from the equations, and original diagrams
   with numbered captions and credits
+- **Lessons you can hear**: language, music and other courses where sound matters play every word, tone, phrase or
+  chord right where it's taught, using free recordings by native speakers from Wikimedia Commons, with the computer's
+  own voice or synthesised notes when no recording exists
 - **Write your own course from documents you already have**: attach PDFs, Word files or slides to any lesson or
   piece of work, start with just one lesson, and add weeks, quizzes and exams while the course runs
 - **A classroom for every course**: home, weekly modules, syllabus, gradebook and your own materials
@@ -54,7 +57,7 @@ Version 0.5.0 added figures in lessons, themes, an Insights page, clearer feedba
 | --- | --- |
 | Windows 10 or 11, 64-bit | Uses Microsoft Edge WebView2, which Windows 11 already has (the installer adds it on Windows 10 if needed). |
 | [Claude Code](https://claude.com/claude-code) | Installed and signed in **with a Claude subscription** (Pro or Max). SelfSemester runs your own copy of Claude Code; there's no API key to enter. |
-| Internet | Needed while a course is being built and whenever work is marked. Reading lessons and doing work happen offline. |
+| Internet | Needed while a course is being built, while lesson sounds are being fetched, and whenever work is marked. Reading lessons and doing work happen offline. |
 
 To build from source instead of downloading the installer, you also need Node.js 22.17+, Rust 1.85+ and the Visual
 Studio C++ build tools (see [Install](#install)).
@@ -81,8 +84,9 @@ Studio C++ build tools (see [Install](#install)).
 - **Sources and pictures.** Claude prefers free and openly licensed material (OpenStax, MIT OpenCourseWare,
   LibreTexts, official docs) and marks anything paid as "get this yourself". The app never bypasses paywalls. Lessons
   are written in Claude's own words and link to their sources. Figures are drawn for the lesson rather than copied,
-  and anything adapted from an openly licensed source is credited in its caption. Keep generated courses for your
-  own study.
+  and anything adapted from an openly licensed source is credited in its caption. Lesson sounds are freely licensed
+  recordings from Wikimedia Commons, credited with each lesson, or clearly marked computer voices. Keep generated
+  courses for your own study.
 - **Supported work types today:** typed answers (Markdown and LaTeX), photo or PDF uploads, and auto-marked quizzes.
   Courses that would need audio, camera or code-running checks are planned without those parts for now.
 - **Your own materials:** each course page has a "Your materials" section where you can add reference files (PDFs,
@@ -91,9 +95,11 @@ Studio C++ build tools (see [Install](#install)).
 
 ## Privacy
 
-Everything stays on your computer. The app has no server and no account system. The only thing that talks to the
-internet is your Claude Code, which sends course prompts, your course materials, your submitted work and review questions to Anthropic
-to generate and mark courses, under your agreement with Anthropic. SelfSemester never reads, stores or sends your Claude sign-in.
+Everything stays on your computer. The app has no server and no account system. Your Claude Code sends course
+prompts, your course materials, your submitted work and review questions to Anthropic to generate and mark courses,
+under your agreement with Anthropic. The only other thing the app contacts is Wikimedia Commons, to find and download
+recordings for lesson sounds: it sends the word, phrase or sound it's looking for and nothing about you. You can turn
+that off in Settings, Lesson sounds. SelfSemester never reads, stores or sends your Claude sign-in.
 Courses you write in the course builder never leave your computer, unless you ask Claude about one in review mode.
 
 | Folder | Contents |
@@ -196,6 +202,7 @@ example lessons above.
 src/                      SvelteKit interface (Today, Courses, Insights, course and item pages, builder, Transcript, Settings)
   lib/markdown.ts         lessons: Markdown, LaTeX maths (KaTeX) and figures
   lib/figures.ts          plots drawn from the maths, and cleaned SVG diagrams, with numbered captions
+  lib/audio.ts            play buttons for lesson sounds
   lib/prefs.svelte.ts     themes and display settings
 src-tauri/src/
   claude/                 runs `claude -p` with a JSON schema, reads the result, spots usage limits
@@ -208,8 +215,10 @@ src-tauri/src/
     review.rs             review mode: talking a marked item through with Claude
     builder.rs            the course builder: drafts, publishing, folder export and import
     seal.rs               encrypted answer keys and exams
+    audio.rs              lesson sounds: free recordings from Wikimedia Commons, computer voices, synthesised notes
   db/                     SQLite schema, migrations, job queue
   worker.rs               background thread: runs one Claude job at a time and ticks the clock
+                          (a second thread fills lesson sounds)
   backup.rs               backups before each update, and restoring if the data goes missing
 ```
 

@@ -5,6 +5,18 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "Next",
+    date: "2026-11-12",
+    title: "Lessons you can hear",
+    notes: [
+      "Language, music and other lessons where sound matters have play buttons right where each sound is taught.",
+      "Recordings by native speakers come from Wikimedia Commons, free to reuse and credited under each lesson.",
+      "With no recording, a voice on your computer reads the word (marked as a computer voice), or the app makes the notes.",
+      "Listening tests hide the pinyin or spelling so you have to listen.",
+      "Turn online lookups off in Settings, Lesson sounds.",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-11-12",
     title: "Build from your own documents",
