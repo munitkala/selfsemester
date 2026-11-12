@@ -1,7 +1,8 @@
 # Third-party software
 
 SelfSemester's own code is MIT licensed (see `LICENSE`). It contains no code copied from other projects. The
-libraries below are pulled in by Cargo and npm at build time and keep their own licences; none of them are GPL or AGPL.
+interface icons and the colour themes were made for SelfSemester. The libraries below are pulled in by Cargo and npm
+at build time and keep their own licences; none of them are GPL or AGPL.
 
 ## Rust crates used directly
 

@@ -60,6 +60,10 @@ upgrade, as with every new schema.
   can be turned off under Shortcuts.
 - The sidebar has icons and an Insights link, and shows what Claude is doing as a small status chip.
 
+### What's new
+
+- Settings opens with short patch notes for each version, with a link to this changelog for the details.
+
 ## 0.4.1 (2026-11-09)
 
 ### Security updates

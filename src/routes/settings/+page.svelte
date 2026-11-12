@@ -3,8 +3,10 @@
   import { api, type AppStatus, type BackupInfo } from "#lib/api.ts";
   import { when } from "#lib/format.ts";
   import DisplaySettings from "#lib/DisplaySettings.svelte";
+  import PatchNotes from "#lib/PatchNotes.svelte";
 
   const sections = [
+    { id: "whats-new", label: "What's new" },
     { id: "appearance", label: "Appearance" },
     { id: "layout", label: "Layout" },
     { id: "performance", label: "Motion and performance" },
@@ -82,6 +84,8 @@
 <nav class="jump" aria-label="Settings sections">
   {#each sections as s}<a href="#{s.id}">{s.label}</a>{/each}
 </nav>
+
+<PatchNotes />
 
 <DisplaySettings />
 
