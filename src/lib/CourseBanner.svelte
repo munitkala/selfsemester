@@ -53,7 +53,7 @@
     border-radius: var(--radius) var(--radius) 0 0;
     min-height: 6.2rem;
   }
-  @media (max-width: 640px) {
+  @container page (max-width: 36rem) {
     .banner {
       flex-wrap: wrap;
     }

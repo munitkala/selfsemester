@@ -17,7 +17,7 @@
   root.dataset.theme = dark ? "dark-" + (p.darkTheme || "classic") : "light-" + (p.lightTheme || "classic");
   root.dataset.density = p.density || "comfortable";
   root.dataset.corners = p.corners || "rounded";
-  root.dataset.width = p.width || "normal";
+  root.dataset.width = p.width || "auto";
   root.dataset.effects = p.effects || "balanced";
   root.dataset.motion = reduced ? "reduced" : "full";
   if (hues[p.accent]) root.style.setProperty("--hue", String(hues[p.accent]));

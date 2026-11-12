@@ -17,6 +17,7 @@ export const patchNotes: PatchNote[] = [
       "Ctrl+K to jump to any page or course.",
       "Clearer results: a score ring, a bar per rubric line and a revise checklist.",
       "Course pages, lessons, reviews and the transcript in the new style.",
+      "Panels rearrange as you resize the window, and the sidebar shrinks to icons when it's small.",
     ],
   },
   {

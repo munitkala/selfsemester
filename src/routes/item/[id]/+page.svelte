@@ -131,6 +131,13 @@
 
   const markingState = $derived(v?.marking_status?.split("|") ?? []);
 
+  // Lessons usually open with their own title; the page header already shows it, so skip a matching first heading.
+  const lessonBody = $derived.by(() => {
+    const text = v?.lesson ?? "";
+    const m = text.match(/^\s*#\s+(.+)\r?\n/);
+    return m && m[1].trim().toLowerCase() === v?.item.title.trim().toLowerCase() ? text.slice(m[0].length) : text;
+  });
+
   // About 200 words a minute, the usual figure for reading to learn rather than skimming.
   const readMinutes = $derived(v?.lesson ? Math.max(1, Math.round(v.lesson.split(/\s+/).length / 200)) : 0);
 
@@ -208,7 +215,7 @@
     <div class="read-progress" class:in-focus={focus} style="transform: scaleX({readShare})" aria-hidden="true"></div>
     <div class="reader" class:focus bind:this={reader}>
       {#if focus}<button class="ghost exit" onclick={() => (focus = false)}>Exit reading mode</button>{/if}
-      <article class="prose">{@html render(v.lesson)}</article>
+      <article class="prose">{@html render(lessonBody)}</article>
       <div class="row end">
         {#if v.item.state === "open"}
           <button onclick={markRead}>I've finished this lesson</button>
@@ -227,7 +234,7 @@
         <ol class="questions">
           {#each content.questions as q (q.id)}
             <li>
-              <div class="spread"><div class="prose">{@html render(q.prompt)}</div><span class="muted small">{q.points} pts</span></div>
+              <div class="spread"><div class="prose">{@html render(q.prompt)}</div><span class="muted small nowrap">{q.points} {q.points === 1 ? "point" : "points"}</span></div>
               {#if answering && (q.type === "mcq" || q.type === "numeric")}
                 {#if q.type === "mcq"}
                   <div class="options">
@@ -254,7 +261,7 @@
       {#if content.rubric.length}
         <details>
           <summary>How this is marked</summary>
-          <ul class="small">{#each content.rubric as r}<li><strong>{r.criterion}</strong> ({r.points} pts) {r.description}</li>{/each}</ul>
+          <ul class="small">{#each content.rubric as r}<li><strong>{questionLabel(r.criterion)}</strong> ({r.points} {r.points === 1 ? "point" : "points"}) {r.description}</li>{/each}</ul>
         </details>
       {/if}
     </section>
@@ -729,10 +736,15 @@
   .questions li {
     margin: 1rem 0;
   }
+  /* Short options sit side by side; long ones take a full row. */
   .options {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+  }
+  .radio :global(p) {
+    margin: 0;
   }
   .radio {
     font-weight: 400;

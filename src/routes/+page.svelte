@@ -78,6 +78,7 @@
 
 {#if error}<p class="note bad">{error}</p>{/if}
 
+<div class="board">
 {#if needsYou.length}
   <section class="card">
     <h2>Needs you</h2>
@@ -159,8 +160,19 @@
     </section>
   {/if}
 {/if}
+</div>
 
 <style>
+  /* Sections tile into as many columns as fit, and stack in a narrow window. */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+    gap: var(--space);
+    align-items: start;
+  }
+  .board > :global(.card) {
+    margin: 0;
+  }
   .hero {
     position: relative;
     display: flex;

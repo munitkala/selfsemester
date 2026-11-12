@@ -127,6 +127,7 @@
       </div>
     </section>
 
+    <div class="two" class:single={!notes.length}>
     {#if notes.length}
       <section class="card notes">
         <h2><Icon name="sparkle" size={16} /> What stands out</h2>
@@ -143,6 +144,7 @@
       </div>
       <Heatmap {grid} weekStart={prefs.weekStart} />
     </section>
+    </div>
 
     <div class="two">
       <section class="card">
@@ -278,10 +280,15 @@
     color: var(--accent);
     flex: none;
   }
+  /* Pairs of panels sit side by side when there's room and stack when the window is narrow. */
   .two {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
     gap: var(--space);
+    align-items: start;
+  }
+  .two.single {
+    grid-template-columns: minmax(0, 1fr);
   }
   .two > .card {
     margin-bottom: var(--space);

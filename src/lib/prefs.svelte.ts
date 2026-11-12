@@ -18,7 +18,7 @@ export type Prefs = {
   textScale: number;
   density: "compact" | "comfortable" | "spacious";
   corners: "sharp" | "rounded" | "round";
-  width: "normal" | "wide" | "full";
+  width: "auto" | "normal" | "wide" | "full";
   sidebar: "full" | "compact";
   startPage: "/" | "/courses" | "/insights";
   effects: Effects;
@@ -39,7 +39,7 @@ export const defaults: Prefs = {
   textScale: 100,
   density: "comfortable",
   corners: "rounded",
-  width: "normal",
+  width: "auto",
   sidebar: "full",
   startPage: "/",
   effects: "balanced",

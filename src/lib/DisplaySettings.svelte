@@ -116,12 +116,12 @@
 <section class="card" id="layout">
   <h2><Icon name="courses" size={18} /> Layout</h2>
   <div class="setting">
-    <div class="name">Sidebar<span class="hint">Compact shows icons only. Also the arrow at the bottom of the sidebar.</span></div>
+    <div class="name">Sidebar<span class="hint">Compact shows icons only. It also switches to icons by itself in a small window.</span></div>
     {@render seg("sidebar", [{ value: "full", label: "Full" }, { value: "compact", label: "Compact" }], "Sidebar")}
   </div>
   <div class="setting">
-    <div class="name">Page width<span class="hint">Wide and full suit big monitors.</span></div>
-    {@render seg("width", [{ value: "normal", label: "Normal" }, { value: "wide", label: "Wide" }, { value: "full", label: "Full" }], "Page width")}
+    <div class="name">Page width<span class="hint">Auto fills the window and rearranges panels as you resize it.</span></div>
+    {@render seg("width", [{ value: "auto", label: "Auto" }, { value: "normal", label: "Narrow" }, { value: "wide", label: "Wide" }, { value: "full", label: "Full" }], "Page width")}
   </div>
   <div class="setting">
     <div class="name">Open on<span class="hint">The page SelfSemester starts on.</span></div>

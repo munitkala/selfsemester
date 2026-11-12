@@ -34,10 +34,15 @@
     { href: "/transcript", label: "Transcript", icon: "transcript" },
     { href: "/settings", label: "Settings", icon: "settings" },
   ];
-  const compact = $derived(prefs.sidebar === "compact");
+  // In a small window the sidebar shrinks to icons by itself, so the page keeps its room.
+  let windowWidth = $state(1200);
+  const autoCompact = $derived(windowWidth < 980);
+  const compact = $derived(prefs.sidebar === "compact" || autoCompact);
+  // Lessons, work and forms read best at a fixed width; the rest of the app fills the window.
+  const reading = $derived(/^\/(item\/|new$|build$)/.test(page.url.pathname));
 
   function toggleSidebar() {
-    prefs.sidebar = compact ? "full" : "compact";
+    prefs.sidebar = prefs.sidebar === "compact" ? "full" : "compact";
     save();
   }
 
@@ -120,6 +125,8 @@
   </div>
 {/if}
 
+<svelte:window bind:innerWidth={windowWidth} />
+
 <div class="shell" class:compact inert={noticeOk === false}>
   <aside>
     <div class="brand">
@@ -158,6 +165,7 @@
           <span class="muted" class:sr={compact}>Claude is idle</span>
         </span>
       {/if}
+      {#if !autoCompact}
       <button
         class="ghost collapse"
         onclick={toggleSidebar}
@@ -166,9 +174,10 @@
       >
         <Icon name={compact ? "expand" : "collapse"} size={16} />
       </button>
+      {/if}
     </div>
   </aside>
-  <main>
+  <main class:reading>
     {#if restored}
       <p class="note">Your data was missing when SelfSemester started, so it restored your newest backup (from {when(restored)}). <a href="/settings">Settings</a> <button class="ghost small" onclick={() => (restored = null)}>OK</button></p>
     {/if}
@@ -222,11 +231,12 @@
   }
   .shell {
     display: grid;
-    grid-template-columns: 14rem 1fr;
+    grid-template-columns: 14rem minmax(0, 1fr);
     min-height: 100vh;
+    transition: grid-template-columns var(--slow) var(--ease);
   }
   .shell.compact {
-    grid-template-columns: 4.25rem 1fr;
+    grid-template-columns: 4.25rem minmax(0, 1fr);
   }
   aside {
     background: var(--sidebar);
@@ -374,10 +384,17 @@
   .compact .collapse {
     align-self: center;
   }
+  /* The page is a size container, so panels inside rearrange to the space they actually get (with or without the
+     sidebar) rather than to the whole window. */
   main {
-    padding: 2rem 2.25rem 4rem;
-    max-width: 60rem;
+    container: page / inline-size;
+    padding: 2rem clamp(1rem, 3vw, 2.5rem) 4rem;
+    max-width: 96rem;
     width: 100%;
+    min-width: 0;
+  }
+  :global([data-width="normal"]) main {
+    max-width: 60rem;
   }
   :global([data-width="wide"]) main {
     max-width: 78rem;
@@ -385,10 +402,15 @@
   :global([data-width="full"]) main {
     max-width: none;
   }
-  @media (max-width: 760px) {
+  /* Reading pages sit in the middle of the window, so a wide window doesn't leave all the space on one side. */
+  main.reading {
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+  @media (max-width: 640px) {
     .shell,
     .shell.compact {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     aside {
       position: static;

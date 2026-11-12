@@ -209,6 +209,7 @@
 
   <!-- ===== Modules ===== -->
   {:else if tab === "modules"}
+    <div class="modules">
     {#each c.units as u (u.key)}
       {@const objectives = c.meta.objectives?.[u.key] ?? []}
       {@const topics = c.plan?.units.find((p) => p.key === u.key)?.topics ?? []}
@@ -245,6 +246,7 @@
         </ul>
       </section>
     {/each}
+    </div>
 
   <!-- ===== Syllabus ===== -->
   {:else if tab === "syllabus"}
@@ -478,10 +480,20 @@
     gap: 1rem;
     align-items: start;
   }
-  @media (max-width: 860px) {
+  @container page (max-width: 50rem) {
     .home {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
+  }
+  /* Weeks sit two across in a wide window. */
+  .modules {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
+    gap: var(--space);
+    align-items: start;
+  }
+  .modules > :global(.card) {
+    margin: 0;
   }
   .main-col > :global(.card),
   .side-col > :global(.card) {
@@ -670,14 +682,13 @@
     margin: 0.2rem 0 0;
     padding-left: 1.2rem;
   }
-  @media (prefers-color-scheme: dark) {
-    .objectives {
-      background: color-mix(in srgb, var(--course) 18%, transparent);
-    }
-    .icon-box {
-      background: color-mix(in srgb, var(--course) 22%, transparent);
-      color: color-mix(in srgb, var(--course) 40%, white);
-    }
+  /* Follows the app's own light/dark choice, not the system's. */
+  :global([data-scheme="dark"]) .objectives {
+    background: color-mix(in srgb, var(--course) 18%, transparent);
+  }
+  :global([data-scheme="dark"]) .icon-box {
+    background: color-mix(in srgb, var(--course) 22%, transparent);
+    color: color-mix(in srgb, var(--course) 40%, white);
   }
   .module-items {
     list-style: none;

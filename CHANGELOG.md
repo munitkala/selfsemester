@@ -80,8 +80,24 @@ upgrade, as with every new schema.
   ahead, and the course builder lists drafts as course cards.
 - While Claude plans or builds a course, the page shows that it's working and how many units are done.
 - Fixed: some numbered badges in the course builder used white text on a light accent in dark themes.
-- The Insights summary tiles stay on one row at the app's normal window size.
-- New screenshots in the README for every screen and nine of the themes.
+- New screenshots in the README for every screen and nine of the themes, taken in a normal-sized window.
+
+### Fits any window
+
+**Why:** panels stayed in one fixed-width column, so a big window left a wide empty band and a small one squeezed
+everything.
+
+- A new **Auto** page width (now the default) lets pages use the whole window. Panels rearrange as you resize:
+  Today's sections, Insights charts, the course home, modules and the course builder sit side by side when there's
+  room and stack when there isn't. They respond to the space the page actually has, with or without the sidebar.
+- In a small window the sidebar shrinks to icons by itself, and slides between the two sizes as you resize.
+- Lessons, assignments and forms stay at a comfortable reading width in the middle of the window.
+- On a wide window, Settings shows its sections as a list down the left.
+- The old fixed widths are still there under **Settings, Layout, Page width** (Narrow, Wide, Full).
+- Multiple-choice options are compact cards that sit side by side, instead of tall full-width boxes.
+- A lesson that starts with its own title no longer shows the title twice.
+- Points read "1 point" and "3 points", and the marking guide names questions "Question 3" instead of an internal id.
+- Fixed: the course page's dark colours followed the Windows setting instead of the theme chosen in the app.
 
 ### What's new
 

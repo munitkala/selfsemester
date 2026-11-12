@@ -580,9 +580,9 @@
     gap: 1.25rem;
     align-items: start;
   }
-  @media (max-width: 900px) {
+  @container page (max-width: 54rem) {
     .layout {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .outline {
       position: static !important;

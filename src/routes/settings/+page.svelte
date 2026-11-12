@@ -81,10 +81,12 @@
 <h1>Settings</h1>
 <p class="lead">How SelfSemester looks and runs, how it reaches Claude, and where it keeps your files.</p>
 
+<div class="settings-grid">
 <nav class="jump" aria-label="Settings sections">
   {#each sections as s}<a href="#{s.id}">{s.label}</a>{/each}
 </nav>
 
+<div class="settings-body">
 <PatchNotes />
 
 <DisplaySettings />
@@ -191,8 +193,31 @@
   </section>
 {/if}
 </div>
+</div>
+</div>
 
 <style>
+  .settings-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 1.5rem;
+    align-items: start;
+  }
+  /* A wide window gets the section list as a column on the left. */
+  @container page (min-width: 60rem) {
+    .settings-grid {
+      grid-template-columns: 12rem minmax(0, 54rem);
+    }
+    .jump {
+      flex-direction: column;
+      top: 1rem;
+      border-bottom: 0;
+      background: transparent;
+    }
+    .jump a {
+      border-radius: var(--radius-sm);
+    }
+  }
   .jump {
     position: sticky;
     top: 0;

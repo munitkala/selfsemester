@@ -51,8 +51,8 @@ The full list is in the [changelog](CHANGELOG.md).
 
 ## Screenshots
 
-The app window at its normal size, with made-up demo courses (the course names and content are invented for the
-pictures). Click any picture for the full-size version.
+SelfSemester in a normal-sized window (1280 × 800), with demo courses made up for the pictures. Click any picture
+for the full-size version.
 
 ### Themes
 
@@ -66,6 +66,16 @@ Pick light, dark or follow Windows, then a theme for each, and any accent colour
 | **Blue** (Slate) | **Midnight** | **Black** (high contrast) |
 | ![Paper sepia theme](assets/screenshots/themes/paper.png) | ![Forest dark theme](assets/screenshots/themes/forest.png) | ![Mint light theme](assets/screenshots/themes/mint.png) |
 | **Paper** (sepia) | **Forest** | **Mint** |
+
+### Fits any window
+
+Panels rearrange as you resize the window. In a small window the sidebar shrinks to icons and sections stack; in a
+wide one they spread out side by side.
+
+| | |
+| --- | --- |
+| ![Today in a small window, with an icon sidebar and stacked sections](assets/screenshots/21-small-window.png) | ![Insights in a wide window, with panels side by side](assets/screenshots/22-wide-window.png) |
+| **Small window:** icons only in the sidebar, one column | **Wide window:** more panels side by side |
 
 ### Every day
 
