@@ -45,6 +45,26 @@ deviations shaded (the 68-95-99.7 rule), and the area to the left of $z = 1.5$, 
 $\Phi(1.5) \approx 0.9332$. The second picture is the same lesson in the Midnight theme: plots follow the theme's
 colours, so they read the same in light and dark.
 
+### Introductory Mechanics: Newton's laws and forces on a slope
+
+![Physics lesson plotting friction against applied force, rising to the static limit and dropping to the kinetic value](../assets/screenshots/samples/physics-friction.png)
+
+This lesson has a diagram of a block on a slope, with its weight split into parts along and across the slope. It
+also has the plot shown here: friction against applied force for a block on a flat surface. Static friction
+matches the push up to its limit of 5 N, then the block slides and friction drops to a steady 3 N. The caption gives
+both values, and the text after the figure says what to notice in it.
+
+### Algorithms and Data Structures: Binary search and logarithmic time
+
+| | |
+| --- | --- |
+| ![Algorithms lesson tracing binary search for 23 across three steps of a sorted array](../assets/screenshots/samples/algorithms.png) | ![Algorithms lesson plotting n against log base 2 of n for n from 1 to 64](../assets/screenshots/samples/algorithms-growth.png) |
+
+Figure 1 is a diagram that traces a search for 23 in a sorted array of ten numbers. Each row shows `lo`, `hi` and
+the probe, and the range left to search halves each step until 23 is found at index 5 on the third probe. Figure 2
+plots $n$ against $\log_2 n$ for $n$ up to 64, so you can see why doubling the data only adds one probe. The
+homework asks you to trace searches by hand, count probes and find the bug in a broken version.
+
 ### How figures work
 
 Lessons can contain two kinds of figure. **Plots** are written as the maths (a function, data points, vectors or a
