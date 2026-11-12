@@ -8,8 +8,10 @@
   import ProgressBar from "#lib/Progress.svelte";
   import Review from "#lib/Review.svelte";
   import { kindLabel, stateLabel, when, relative, pct } from "#lib/format.ts";
+  import { trackStudy } from "#lib/study.ts";
 
   const id = $derived(page.params.id ?? "");
+  $effect(() => trackStudy(id));
   let v = $state<ItemView | null>(null);
   let course = $state<CourseView | null>(null);
   let error = $state<string | null>(null);

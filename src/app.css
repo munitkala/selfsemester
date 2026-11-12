@@ -1,43 +1,213 @@
+/* Themes ------------------------------------------------------------------------------------------------------
+   Each theme sets surfaces, text and status colours. The accent is built from one hue (--hue), so the accent
+   picker in Settings works with every theme. Light themes use a darker accent (white text on buttons), dark themes
+   a lighter, softer one with dark text on buttons, so both stay above WCAG AA contrast on their own surfaces.
+   Dark themes use dark grey rather than pure black, and off-white rather than pure white, to cut glare. */
+
 :root {
+  --hue: 262;
+  --text-scale: 1;
+  --accent-l: 0.47;
+  --accent-c: 0.15;
+  --on-accent: #ffffff;
+
   --bg: #f6f5f1;
   --panel: #ffffff;
+  --raised: #fbfaf7;
   --sidebar: #eeece6;
   --text: #1c1c1a;
-  --muted: #66655f;
+  --muted: #5f5e58;
   --line: #e2e0d9;
-  --accent: #2c55c9;
-  --accent-soft: #e6ecfb;
   --good: #1e7a3c;
-  --warn: #965f00;
+  --warn: #8a5700;
   --bad: #b3261e;
-  --radius: 10px;
+
+  --accent: oklch(var(--accent-l) var(--accent-c) var(--hue));
+  --accent-soft: color-mix(in oklch, var(--accent) 12%, var(--panel));
+  --accent-line: color-mix(in oklch, var(--accent) 40%, var(--line));
+
+  /* Course and chart colours that read on light and dark surfaces alike. */
+  --chart-1: oklch(0.62 0.14 262);
+  --chart-2: oklch(0.66 0.13 160);
+  --chart-3: oklch(0.7 0.14 70);
+  --chart-4: oklch(0.62 0.17 20);
+  --chart-5: oklch(0.6 0.14 300);
+  --chart-6: oklch(0.66 0.11 210);
+  /* Course colours are deep tones; dark themes mix in white so they stay visible. */
+  --course-lift: 100%;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --space: 1rem;
+  --pad: 1.1rem 1.25rem;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04);
+  --shadow-hover: 0 4px 18px rgb(0 0 0 / 0.09);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --fast: 140ms;
+  --slow: 420ms;
+
   font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale));
   line-height: 1.55;
   color: var(--text);
   background: var(--bg);
+  color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #151514;
-    --panel: #1f1f1d;
-    --sidebar: #1a1a18;
-    --text: #ebebe6;
-    --muted: #a2a19a;
-    --line: #34332f;
-    --accent: #84a2ff;
-    --accent-soft: #232c45;
-    --good: #5fc884;
-    --warn: #e2a64c;
-    --bad: #f2877c;
-    color-scheme: dark;
-  }
+
+:root[data-theme="light-paper"] {
+  --hue: 55;
+  --accent-c: 0.12;
+  --bg: #f4ecd8;
+  --panel: #fbf6ea;
+  --raised: #f8f1e1;
+  --sidebar: #eae0c8;
+  --text: #433422;
+  --muted: #6b5a43;
+  --line: #ddd0b2;
+  --good: #2f6b2a;
+  --warn: #8a4f00;
+  --bad: #a3271c;
 }
+:root[data-theme="light-mint"] {
+  --hue: 160;
+  --bg: #f1f5f2;
+  --panel: #ffffff;
+  --raised: #f7faf8;
+  --sidebar: #e4ece6;
+  --text: #17241c;
+  --muted: #536259;
+  --line: #d5e0d8;
+}
+:root[data-theme="light-contrast"] {
+  --accent-l: 0.38;
+  --accent-c: 0.18;
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --raised: #ffffff;
+  --sidebar: #f2f2f2;
+  --text: #000000;
+  --muted: #333333;
+  --line: #6b6b6b;
+  --good: #005c24;
+  --warn: #6b3f00;
+  --bad: #8f1009;
+}
+
+:root[data-scheme="dark"] {
+  color-scheme: dark;
+  --accent-l: 0.78;
+  --accent-c: 0.11;
+  --on-accent: #10131a;
+  --bg: #151514;
+  --panel: #1f1f1d;
+  --raised: #252523;
+  --sidebar: #1a1a18;
+  --text: #ebebe6;
+  --muted: #a8a79f;
+  --line: #34332f;
+  --good: #5fc884;
+  --warn: #e2a64c;
+  --bad: #f2877c;
+  --accent-soft: color-mix(in oklch, var(--accent) 16%, var(--panel));
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-hover: 0 6px 22px rgb(0 0 0 / 0.45);
+  --chart-1: oklch(0.74 0.12 262);
+  --chart-2: oklch(0.76 0.12 160);
+  --chart-3: oklch(0.8 0.12 75);
+  --chart-4: oklch(0.72 0.14 20);
+  --chart-5: oklch(0.72 0.12 300);
+  --chart-6: oklch(0.76 0.1 210);
+  --course-lift: 62%;
+}
+:root[data-theme="dark-slate"] {
+  --hue: 230;
+  --bg: #0f172a;
+  --panel: #162033;
+  --raised: #1b273d;
+  --sidebar: #121b2d;
+  --text: #e5e9f0;
+  --muted: #a0abbd;
+  --line: #27344c;
+}
+:root[data-theme="dark-midnight"] {
+  --hue: 290;
+  --bg: #0b0f19;
+  --panel: #121826;
+  --raised: #182031;
+  --sidebar: #0e1320;
+  --text: #e6e6ea;
+  --muted: #a1a3b3;
+  --line: #232b3c;
+}
+:root[data-theme="dark-forest"] {
+  --hue: 155;
+  --bg: #101814;
+  --panel: #16211b;
+  --raised: #1b2821;
+  --sidebar: #121c17;
+  --text: #e3ece6;
+  --muted: #a0b3a6;
+  --line: #25352c;
+}
+:root[data-theme="dark-contrast"] {
+  --accent-l: 0.82;
+  --accent-c: 0.12;
+  --on-accent: #000000;
+  --bg: #000000;
+  --panel: #0d0d0d;
+  --raised: #141414;
+  --sidebar: #000000;
+  --text: #ffffff;
+  --muted: #d6d6d6;
+  --line: #8a8a8a;
+  --good: #7dffa8;
+  --warn: #ffd166;
+  --bad: #ff8f85;
+}
+
+/* Density and corners */
+:root[data-density="compact"] {
+  --space: 0.7rem;
+  --pad: 0.75rem 0.95rem;
+  line-height: 1.45;
+}
+:root[data-density="spacious"] {
+  --space: 1.35rem;
+  --pad: 1.4rem 1.6rem;
+  line-height: 1.65;
+}
+:root[data-corners="sharp"] {
+  --radius: 3px;
+  --radius-sm: 2px;
+}
+:root[data-corners="round"] {
+  --radius: 18px;
+  --radius-sm: 12px;
+}
+
+/* Effects. "full" adds blur behind dialogs and the moving glow on Today, which cost the most graphics work.
+   "minimal" is flat: no shadows, gradients or animation. Blur is turned off with `none`, not `blur(0)`, because a
+   zero blur still makes the browser keep the extra layer. */
+:root[data-effects="minimal"] {
+  --shadow: none;
+  --shadow-hover: none;
+}
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Base ----------------------------------------------------------------------------------------------------------- */
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
-h1 { font-size: 1.75rem; line-height: 1.2; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
-h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+::selection { background: color-mix(in oklch, var(--accent) 30%, transparent); }
+h1 { font-size: 1.85rem; line-height: 1.2; margin: 0 0 0.25rem; letter-spacing: -0.015em; }
+h2 { font-size: 1.15rem; margin: 0 0 0.6rem; letter-spacing: -0.005em; }
 h3 { font-size: 1rem; margin: 0 0 0.4rem; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -49,13 +219,16 @@ code { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
 .good { color: var(--good); }
 .warn { color: var(--warn); }
 .bad { color: var(--bad); }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 0.25rem 0; }
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 1.1rem 1.25rem;
-  margin-bottom: 1rem;
+  padding: var(--pad);
+  margin-bottom: var(--space);
+  box-shadow: var(--shadow);
 }
 .row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
 .spread { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
@@ -64,16 +237,20 @@ code { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
 button, .button {
   font: inherit;
   padding: 0.45rem 1rem;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   display: inline-block;
+  transition: filter var(--fast), background-color var(--fast), transform var(--fast);
 }
-button:hover:not(:disabled) { filter: brightness(1.08); }
+a.button:hover { text-decoration: none; }
+button:hover:not(:disabled), .button:hover { filter: brightness(1.08); }
+button:active:not(:disabled), .button:active { transform: translateY(1px); }
 button:disabled { opacity: 0.5; cursor: default; }
-button.ghost { background: transparent; color: var(--accent); }
+button.ghost, .button.ghost { background: transparent; color: var(--accent); }
+button.ghost:hover:not(:disabled), .button.ghost:hover { background: var(--accent-soft); filter: none; }
 button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent);
@@ -85,10 +262,12 @@ input, textarea, select {
   color: var(--text);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   padding: 0.45rem 0.6rem;
   width: 100%;
 }
+input[type="checkbox"], input[type="radio"] { width: auto; accent-color: var(--accent); }
+input[type="range"] { accent-color: var(--accent); padding: 0; border: 0; background: transparent; }
 textarea { min-height: 7rem; resize: vertical; }
 label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
 .field { margin-bottom: 1rem; }
@@ -115,6 +294,7 @@ label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparent); }
 .table-wrap { overflow-x: auto; }
 
 .spinner {
@@ -123,14 +303,41 @@ th { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
   animation: spin 0.9s linear infinite; display: inline-block; vertical-align: -0.15rem;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+:root[data-motion="reduced"] .spinner { animation: spin 3s linear infinite !important; }
+
+/* Segmented control and swatch picker, used in Settings */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius-sm) + 3px);
+  background: var(--raised);
+}
+.segmented button {
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.9rem;
+}
+.segmented button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.segmented button:hover:not([aria-pressed="true"]) { background: var(--accent-soft); filter: none; }
+
+/* Sections that are off screen skip layout and painting until they scroll into view. */
+.offscreen-lazy { content-visibility: auto; contain-intrinsic-size: auto 320px; }
 
 /* Lesson / rendered Markdown */
 .prose { font-size: 1.05rem; line-height: 1.7; max-width: 42rem; }
 .prose h1, .prose h2, .prose h3 { margin-top: 1.6em; }
 .prose h1:first-child { margin-top: 0; }
-.prose pre { background: var(--sidebar); padding: 0.8rem 1rem; border-radius: 8px; overflow-x: auto; }
-.prose blockquote { border-left: 3px solid var(--line); margin: 0; padding-left: 1rem; color: var(--muted); }
+.prose pre { background: var(--sidebar); padding: 0.8rem 1rem; border-radius: var(--radius-sm); overflow-x: auto; }
+.prose blockquote { border-left: 3px solid var(--accent-line); margin: 0; padding-left: 1rem; color: var(--muted); }
 .prose table { margin: 1rem 0; }
 .prose .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.2rem 0; }
 .prose img { max-width: 100%; }
+
+/* Page enter animation; skipped under reduced motion. */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+:root[data-motion="full"] .page-enter { animation: rise var(--slow) var(--ease) both; }

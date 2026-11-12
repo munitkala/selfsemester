@@ -38,6 +38,14 @@ What came in 0.2.0:
 - **Review with Claude**: ask about your mark and the feedback on anything you've handed in.
 - **Course builder**: write your own course without Claude and run it the same way.
 
+Coming in the next release:
+
+- **Themes**: light, dark or system, five dark and four light themes including sepia and high contrast, any
+  accent colour, text size, density, and visual effects you can turn down on slower computers.
+- **Insights**: streaks, study time against a daily goal, an activity calendar, marks over time and what's due
+  in the coming weeks.
+- **Ctrl+K** to jump anywhere.
+
 The full list is in the [changelog](CHANGELOG.md).
 
 ## Screenshots

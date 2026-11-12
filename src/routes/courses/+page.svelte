@@ -87,12 +87,16 @@
     border-radius: var(--radius);
     overflow: hidden;
     text-decoration: none;
-    transition: border-color 0.12s, transform 0.12s;
+    box-shadow: var(--shadow);
+    transition: border-color var(--fast), transform var(--fast) var(--ease), box-shadow var(--fast);
   }
   .course:hover,
   .course:focus-visible {
     border-color: var(--accent);
-    transform: translateY(-1px);
+    box-shadow: var(--shadow-hover);
+  }
+  :global(:root:not([data-effects="minimal"])) .course:hover {
+    transform: translateY(-2px);
   }
   .body {
     padding: 0.7rem 0.9rem 0.85rem;

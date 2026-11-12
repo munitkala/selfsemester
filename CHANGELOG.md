@@ -5,7 +5,60 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-Nothing yet.
+The database moves to schema version 6, which adds a table for study time. Your data is backed up before the
+upgrade, as with every new schema.
+
+### Themes and display options
+
+**Why:** the app looked the same for everyone and only followed Windows' light or dark setting.
+
+- Settings has a new **Appearance** section. Pick Light, Dark or System, then a light theme (Classic, Paper,
+  Mint, High contrast) and a dark theme (Classic, Slate, Midnight, Forest, High contrast) separately, so System
+  mode switches between the two you like.
+- Every theme was checked against WCAG AA contrast on its own colours. Dark themes use dark grey instead of pure
+  black and softer accents, which is easier on the eyes for long sessions. Paper is a sepia theme for reading.
+- Choose an accent colour (blue, teal, green, violet, rose, coral, amber, or the theme's own), text size, density
+  (compact, comfortable, spacious) and corner style.
+- **Layout** options: an icon-only sidebar (also the arrow at the bottom of the sidebar), wider pages for big
+  monitors, and which page the app opens on.
+- The chosen theme is applied before the window draws, so a dark theme no longer flashes white on start.
+
+### Motion and performance
+
+**Why:** extra visual effects shouldn't slow down an older laptop or drain its battery.
+
+- **Visual effects** has three levels. Full adds blur behind dialogs and a slowly moving glow on Today, which
+  costs the most graphics work. Balanced (the default) keeps soft shadows and small animations but no blur.
+  Minimal is flat and still.
+- **Animation** follows Windows' animation setting, or can be turned on or off.
+- Pages reload less: a burst of background changes (a unit being written, marks arriving) now causes one reload
+  instead of one per change, and a minimised window waits until it's shown again before reloading.
+- Long sections of the Insights page skip drawing until you scroll to them.
+
+### Insights
+
+**Why:** to see how you're actually studying, not just your marks.
+
+- A new **Insights** page shows your streak, study time, average mark and on-time rate, a calendar of activity
+  for the last 6 or 12 months, study time per day against your goal, marks over time with a running average,
+  averages by type of work, time per course, when in the day and week you study, and how much graded work is due
+  in each of the next six weeks.
+- A short **What stands out** list points out things the numbers back up, such as your busiest day, whether this
+  week is ahead of last week, or which type of work is lowest.
+- Study time is counted on lesson and work pages while the window is in front and you've used the mouse or
+  keyboard in the last two minutes, so a page left open doesn't count. It stays on this computer. Turn it off,
+  set a daily goal, or clear the history under **Study time and goals** in Settings.
+
+### Today
+
+- Today opens with a greeting, today's study time against your goal, your streak and your current average. When
+  you reach your goal it says so, with a small flourish you can turn off.
+
+### Getting around
+
+- Press **Ctrl+K** anywhere to jump to a page or course, switch light and dark, or change the effects level. It
+  can be turned off under Shortcuts.
+- The sidebar has icons and an Insights link, and shows what Claude is doing as a small status chip.
 
 ## 0.4.1 (2026-11-09)
 

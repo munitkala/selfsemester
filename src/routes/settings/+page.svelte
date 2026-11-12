@@ -2,6 +2,17 @@
   import { onMount } from "svelte";
   import { api, type AppStatus, type BackupInfo } from "#lib/api.ts";
   import { when } from "#lib/format.ts";
+  import DisplaySettings from "#lib/DisplaySettings.svelte";
+
+  const sections = [
+    { id: "appearance", label: "Appearance" },
+    { id: "layout", label: "Layout" },
+    { id: "performance", label: "Motion and performance" },
+    { id: "study", label: "Study and goals" },
+    { id: "shortcuts", label: "Shortcuts" },
+    { id: "claude", label: "Claude Code" },
+    { id: "data", label: "Data and backups" },
+  ];
 
   let status = $state<AppStatus | null>(null);
   let loadError = $state<string | null>(null);
@@ -64,10 +75,17 @@
   });
 </script>
 
+<div class="page-enter">
 <h1>Settings</h1>
-<p class="lead">How SelfSemester reaches Claude, and where it keeps your files.</p>
+<p class="lead">How SelfSemester looks and runs, how it reaches Claude, and where it keeps your files.</p>
 
-<section class="card" aria-live="polite">
+<nav class="jump" aria-label="Settings sections">
+  {#each sections as s}<a href="#{s.id}">{s.label}</a>{/each}
+</nav>
+
+<DisplaySettings />
+
+<section class="card" id="claude" aria-live="polite">
   <div class="spread">
     <h2>Claude Code</h2>
     <button class="ghost" onclick={refresh}>Check again</button>
@@ -117,7 +135,7 @@
   {/if}
 </section>
 
-<section class="card">
+<section class="card" id="data">
   <div class="spread">
     <h2>Your data and backups</h2>
     <button class="ghost" onclick={backupNow} disabled={backingUp}>{backingUp ? "Backing up…" : "Back up now"}</button>
@@ -168,8 +186,34 @@
     <p class="small muted">SelfSemester {status.startup.version} · database schema v{status.schema_version}</p>
   </section>
 {/if}
+</div>
 
 <style>
+  .jump {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0;
+    margin-bottom: 0.75rem;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .jump a {
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    color: var(--text);
+    font-size: 0.88rem;
+  }
+  .jump a:hover {
+    background: var(--accent-soft);
+    text-decoration: none;
+  }
+  section {
+    scroll-margin-top: 3.5rem;
+  }
   dl {
     display: grid;
     grid-template-columns: 7rem 1fr;

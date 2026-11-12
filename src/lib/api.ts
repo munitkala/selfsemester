@@ -227,6 +227,13 @@ export type Transcript = {
   gpa: number | null;
 };
 
+export type InsightsData = {
+  study: { day: string; hour: number; course_id: string; seconds: number }[];
+  marks: { marked_at: string; percent: number; kind: string; course_id: string; title: string; late_days: number; missed: boolean }[];
+  events: { at: string; kind: "submit" | "review"; course_id: string }[];
+  due: { due_at: string; kind: string; course_id: string; weight: number }[];
+};
+
 export const api = {
   status: () => invoke<AppStatus>("app_status"),
   jobs: () => invoke<JobSummary>("jobs_status"),
@@ -267,13 +274,38 @@ export const api = {
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   backups: () => invoke<BackupInfo[]>("list_backups"),
   backupNow: () => invoke<string>("backup_now"),
+  recordStudy: (itemId: string, day: string, hour: number, seconds: number) => invoke<void>("record_study", { itemId, day, hour, seconds }),
+  insights: () => invoke<InsightsData>("get_insights"),
+  clearStudyTime: () => invoke<number>("clear_study_time"),
 };
 
-/** Re-run `load` now and whenever the backend says data changed. Returns a cleanup function. */
+/** Re-run `load` now and whenever the backend says data changed. Returns a cleanup function.
+ *  A burst of changes (a unit being written, marks arriving) becomes one reload, and a hidden window waits until
+ *  it's shown again instead of reloading in the background. */
 export function live(load: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stale = false;
+  const run = () => {
+    timer = null;
+    if (document.hidden) {
+      stale = true;
+      return;
+    }
+    stale = false;
+    load();
+  };
+  const schedule = () => {
+    if (!timer) timer = setTimeout(run, 150);
+  };
+  const shown = () => {
+    if (!document.hidden && stale) schedule();
+  };
   load();
-  const un = listen("data-changed", () => load());
+  const un = listen("data-changed", schedule);
+  document.addEventListener("visibilitychange", shown);
   return () => {
+    if (timer) clearTimeout(timer);
+    document.removeEventListener("visibilitychange", shown);
     un.then((f) => f());
   };
 }

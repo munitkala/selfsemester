@@ -6,6 +6,10 @@
   - Immediate submission grading & rubric-based feedback upon finishing assignments or assessments
   - Dedicated **Review Mode** to discuss grading results, question details, and feedback with Claude in depth
 - [ ] **Late November 2026**: UI redesign & polish (improved layout navigation, cleaner desktop workspace, and better feedback screens)
+  - [x] Themes, accent colours and display options, with effects and animation that can be turned down
+  - [x] Insights page with study time, streaks and mark trends
+  - [x] Ctrl+K quick navigation and an icon sidebar that can collapse
+  - [ ] Course, item and builder pages redone in the new style, and better feedback screens
 - [ ] **December 2026**: Expansive Claude lesson generation (automated generation with inline diagrams, charts, and relevant visual aids)
 - [x] **NON-AI FEATURE: Late December 2026**: Manual/Local course builder (create and edit custom directory structures and course syllabi locally without requiring Claude)
 

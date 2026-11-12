@@ -392,6 +392,27 @@ fn get_transcript(state: tauri::State<'_, AppState>) -> Res<course::TranscriptVi
     course::transcript(&state.db.lock().unwrap())
 }
 
+// ---------- study time and insights ----------
+
+/// Called about once a minute while a lesson or item page is open, focused and in use.
+/// Doesn't send `data-changed`: a heartbeat shouldn't make every open page reload.
+#[tauri::command]
+fn record_study(state: tauri::State<'_, AppState>, item_id: String, day: String, hour: u32, seconds: u32) -> Res<()> {
+    course::insights::record_study(&state.db.lock().unwrap(), &item_id, &day, hour, seconds)
+}
+
+#[tauri::command]
+fn get_insights(state: tauri::State<'_, AppState>) -> Res<course::insights::Insights> {
+    course::insights::insights(&state.db.lock().unwrap())
+}
+
+#[tauri::command]
+fn clear_study_time(app: AppHandle, state: tauri::State<'_, AppState>) -> Res<usize> {
+    let n = course::insights::clear_study(&state.db.lock().unwrap())?;
+    changed(&app);
+    Ok(n)
+}
+
 /// Open one of the app's own folders (course archive, Documents folder) in File Explorer.
 #[tauri::command]
 fn open_folder(app: AppHandle, state: tauri::State<'_, AppState>, path: String) -> Res<()> {
@@ -468,6 +489,9 @@ pub fn run() {
             builder_export,
             builder_import,
             get_transcript,
+            record_study,
+            get_insights,
+            clear_study_time,
             open_folder,
             list_backups,
             backup_now

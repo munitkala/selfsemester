@@ -6,6 +6,10 @@
   import { api, live, type JobSummary } from "#lib/api.ts";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { stageLabel, when } from "#lib/format.ts";
+  import { goto } from "$app/navigation";
+  import { apply, prefs, save, watchSystem } from "#lib/prefs.svelte.ts";
+  import Icon from "#lib/Icon.svelte";
+  import CommandPalette from "#lib/CommandPalette.svelte";
 
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);
@@ -14,6 +18,7 @@
   // First-launch terms notice: null while checking, false until accepted.
   let noticeOk = $state<boolean | null>(null);
   let agreed = $state(false);
+  let palette = $state(false);
 
   async function acceptNotice() {
     await api.acceptNotice();
@@ -21,13 +26,27 @@
   }
 
   const nav = [
-    { href: "/", label: "Today" },
-    { href: "/courses", label: "Courses" },
-    { href: "/new", label: "New course" },
-    { href: "/build", label: "Course builder" },
-    { href: "/transcript", label: "Transcript" },
-    { href: "/settings", label: "Settings" },
+    { href: "/", label: "Today", icon: "today" },
+    { href: "/courses", label: "Courses", icon: "courses" },
+    { href: "/insights", label: "Insights", icon: "insights" },
+    { href: "/new", label: "New course", icon: "new" },
+    { href: "/build", label: "Course builder", icon: "builder" },
+    { href: "/transcript", label: "Transcript", icon: "transcript" },
+    { href: "/settings", label: "Settings", icon: "settings" },
   ];
+  const compact = $derived(prefs.sidebar === "compact");
+
+  function toggleSidebar() {
+    prefs.sidebar = compact ? "full" : "compact";
+    save();
+  }
+
+  function shortcuts(e: KeyboardEvent) {
+    if (prefs.shortcuts && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      palette = !palette;
+    }
+  }
 
   function active(href: string) {
     const p = page.url.pathname;
@@ -45,7 +64,17 @@
   }
 
   onMount(() => {
+    apply();
+    const unwatch = watchSystem();
+    // The start page applies once per launch, so going back to Today later still works.
+    try {
+      if (page.url.pathname === "/" && prefs.startPage !== "/" && !sessionStorage.getItem("started")) goto(prefs.startPage);
+      sessionStorage.setItem("started", "1");
+    } catch {
+      /* storage blocked: stay on Today */
+    }
     document.addEventListener("click", externalLinks);
+    document.addEventListener("keydown", shortcuts);
     api.noticeAccepted().then((ok) => (noticeOk = ok)).catch(() => (noticeOk = false));
     api
       .status()
@@ -63,7 +92,9 @@
     });
     return () => {
       stop();
+      unwatch();
       document.removeEventListener("click", externalLinks);
+      document.removeEventListener("keydown", shortcuts);
     };
   });
 </script>
@@ -89,26 +120,52 @@
   </div>
 {/if}
 
-<div class="shell" inert={noticeOk === false}>
+<div class="shell" class:compact inert={noticeOk === false}>
   <aside>
-    <div class="brand">SelfSemester</div>
+    <div class="brand">
+      <span class="mark" aria-hidden="true">S</span>
+      {#if !compact}<span>SelfSemester</span>{/if}
+    </div>
+    {#if prefs.shortcuts}
+      <button class="ghost find" onclick={() => (palette = true)} title="Go to (Ctrl+K)" aria-label="Go to (Ctrl+K)">
+        <Icon name="search" size={16} />
+        {#if !compact}<span>Go to…</span><kbd>Ctrl K</kbd>{/if}
+      </button>
+    {/if}
     <nav aria-label="Main">
       {#each nav as n}
-        <a href={n.href} class:active={active(n.href)} aria-current={active(n.href) ? "page" : undefined}>{n.label}</a>
+        <a href={n.href} class:active={active(n.href)} aria-current={active(n.href) ? "page" : undefined} title={compact ? n.label : undefined}>
+          <Icon name={n.icon} />
+          <span class:sr={compact}>{n.label}</span>
+        </a>
       {/each}
     </nav>
     <div class="activity" aria-live="polite">
       {#if jobs && (jobs.running || jobs.queued)}
-        <span class="spinner" aria-hidden="true"></span>
-        <span>{jobs.running ? `Claude is ${stageLabel[jobs.running_kind ?? ""] ?? "working"}` : "Steps waiting to start"}{jobs.queued ? ` · ${jobs.queued} queued` : ""}</span>
+        {@const busy = jobs.running ? `Claude is ${stageLabel[jobs.running_kind ?? ""] ?? "working"}` : "Steps waiting to start"}
+        <span class="chip busy" title={compact ? busy : undefined}>
+          <span class="spinner" aria-hidden="true"></span>
+          <span class:sr={compact}>{busy}{jobs.queued ? ` · ${jobs.queued} queued` : ""}</span>
+        </span>
       {:else if jobs?.waiting_usage}
         <div>
-          <span class="warn">Paused: usage limit reached. Next try {when(jobs.next_attempt_at)}.</span>
+          <span class="warn">Paused: usage limit reached.<span class:sr={compact}> Next try {when(jobs.next_attempt_at)}.</span></span>
           <button class="ghost resume" onclick={() => api.resume()}>Resume now</button>
         </div>
       {:else}
-        <span class="muted">Claude is idle</span>
+        <span class="chip" title={compact ? "Claude is idle" : undefined}>
+          <span class="dot" aria-hidden="true"></span>
+          <span class="muted" class:sr={compact}>Claude is idle</span>
+        </span>
       {/if}
+      <button
+        class="ghost collapse"
+        onclick={toggleSidebar}
+        aria-label={compact ? "Expand sidebar" : "Collapse sidebar"}
+        title={compact ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        <Icon name={compact ? "expand" : "collapse"} size={16} />
+      </button>
     </div>
   </aside>
   <main>
@@ -122,13 +179,14 @@
   </main>
 </div>
 
+<CommandPalette bind:open={palette} />
+
 <style>
   .notice-backdrop {
     position: fixed;
     inset: 0;
     z-index: 50;
-    background: color-mix(in srgb, var(--bg) 70%, transparent);
-    backdrop-filter: blur(3px);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
     display: grid;
     place-items: center;
     padding: 1rem;
@@ -141,6 +199,10 @@
     padding: 1.5rem 1.75rem;
     max-width: 40rem;
     box-shadow: 0 10px 40px rgb(0 0 0 / 0.18);
+  }
+  :global([data-effects="full"]) .notice-backdrop {
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    backdrop-filter: blur(4px);
   }
   .notice ul {
     padding-left: 1.2rem;
@@ -160,25 +222,67 @@
   }
   .shell {
     display: grid;
-    grid-template-columns: 13rem 1fr;
+    grid-template-columns: 14rem 1fr;
     min-height: 100vh;
+  }
+  .shell.compact {
+    grid-template-columns: 4.25rem 1fr;
   }
   aside {
     background: var(--sidebar);
     border-right: 1px solid var(--line);
-    padding: 1.25rem 0.75rem;
+    padding: 1.1rem 0.7rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.9rem;
     position: sticky;
     top: 0;
     height: 100vh;
   }
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
     font-weight: 700;
-    font-size: 1.1rem;
-    padding: 0 0.6rem;
+    font-size: 1.08rem;
+    padding: 0 0.35rem;
     letter-spacing: -0.01em;
+  }
+  .mark {
+    display: grid;
+    place-items: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 1rem;
+  }
+  :global([data-effects="full"]) .mark,
+  :global([data-effects="balanced"]) .mark {
+    background: linear-gradient(135deg, var(--accent), color-mix(in oklch, var(--accent) 55%, var(--chart-2)));
+  }
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-color: var(--line);
+    background: var(--panel);
+    color: var(--muted);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+  .find span {
+    flex: 1;
+  }
+  .find kbd {
+    font: inherit;
+    font-size: 0.72rem;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0 0.3rem;
   }
   nav {
     display: flex;
@@ -186,18 +290,46 @@
     gap: 0.15rem;
   }
   nav a {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
     color: var(--text);
-    padding: 0.45rem 0.6rem;
-    border-radius: 7px;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--fast), color var(--fast);
+  }
+  nav a :global(.icon) {
+    color: var(--muted);
+    transition: color var(--fast);
   }
   nav a:hover {
     background: var(--panel);
     text-decoration: none;
   }
   nav a.active {
-    background: var(--panel);
+    background: var(--accent-soft);
+    color: var(--text);
     font-weight: 600;
-    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  nav a.active :global(.icon),
+  nav a:hover :global(.icon) {
+    color: var(--accent);
+  }
+  .compact nav a,
+  .compact .find {
+    justify-content: center;
+  }
+  .compact .brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .resume {
     margin-top: 0.4rem;
@@ -207,18 +339,55 @@
   .activity {
     margin-top: auto;
     font-size: 0.82rem;
-    padding: 0 0.6rem;
     display: flex;
+    flex-direction: column;
     gap: 0.5rem;
-    align-items: flex-start;
+  }
+  .chip {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+    padding: 0.35rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .chip.busy {
+    border-color: var(--accent-line);
+  }
+  .compact .chip {
+    justify-content: center;
+  }
+  .dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--good);
+    flex: none;
+  }
+  .collapse {
+    align-self: flex-start;
+    border-color: transparent;
+    color: var(--muted);
+    padding: 0.3rem 0.45rem;
+  }
+  .compact .collapse {
+    align-self: center;
   }
   main {
-    padding: 2rem 2rem 4rem;
-    max-width: 58rem;
+    padding: 2rem 2.25rem 4rem;
+    max-width: 60rem;
     width: 100%;
   }
+  :global([data-width="wide"]) main {
+    max-width: 78rem;
+  }
+  :global([data-width="full"]) main {
+    max-width: none;
+  }
   @media (max-width: 760px) {
-    .shell {
+    .shell,
+    .shell.compact {
       grid-template-columns: 1fr;
     }
     aside {
@@ -234,6 +403,7 @@
     }
     .activity {
       margin-top: 0;
+      flex-direction: row;
     }
     main {
       padding: 1.25rem 1rem 3rem;
