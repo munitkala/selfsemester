@@ -41,6 +41,16 @@ were.
   CC BY-NC-SA) require credit and forbid commercial use.
 - The software is designed to use freely available and openly licensed material only. **Don't use it, or modify it, to
   get around paywalls, logins, digital locks or website terms of use**, or to obtain pirated material.
+- **Figures and pictures in lessons.** Diagrams in generated lessons are drawn for the lesson, and graphs are drawn by
+  the app from the maths. Claude is told not to copy figures, diagrams, photos, screenshots or logos from any source.
+  Where a figure is closely based on one from an openly licensed source, its caption credits the source and licence;
+  where a useful figure is copyrighted, the lesson draws its own version or tells you where to find the original
+  instead of reproducing it. Courses about a particular app show simplified outlines of its window, not real
+  screenshots, logos or icons, and product names are used only to say what the course is about. These steps reduce the
+  risk of reproducing someone else's work but can't rule it out: generated content can still resemble existing
+  material. If something looks copied, don't share it, and report it as described below.
+- Trademarks and product names belong to their owners. Mentioning an app or product in a course doesn't mean its
+  maker is involved with or endorses SelfSemester.
 - You are responsible for making sure your own use complies with copyright law and the terms of the websites you use.
 
 The authors don't host, store or distribute course material. If you believe something in this repository infringes

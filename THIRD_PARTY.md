@@ -38,6 +38,16 @@ crates' own files, which are used unmodified, and doesn't affect the rest of the
 Build-only tools (the Svelte and SvelteKit compilers, the static adapter, Vite, TypeScript, svelte-check) are MIT
 licensed and aren't shipped. `deepmerge` (MIT), pulled in by the Svelte build plugin, is build-only too.
 
+## Pictures and examples in this repository
+
+- **Screenshots** in `assets/screenshots` show the app with made-up demo courses, taken for this repository.
+- **Example lessons** shown in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) were written by the app's own lesson prompt
+  through Claude Code. They name free textbooks (OpenStax, Open Data Structures, the LibreOffice documentation) as
+  reading only; no text or figures from those books are reproduced. Their graphs are drawn by SelfSemester's own
+  plotting code and their diagrams were drawn for the lessons.
+- **Plots and diagrams** in lessons are drawn by code written for SelfSemester (`src/lib/figures.ts`); no charting
+  or diagram library is used.
+
 ## Not included
 
 - **Claude Code** is Anthropic's software. SelfSemester doesn't bundle, modify or redistribute it. Each user

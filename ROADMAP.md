@@ -10,7 +10,7 @@
   - [x] Insights page with study time, streaks and mark trends
   - [x] Ctrl+K quick navigation and an icon sidebar that can collapse
   - [x] Course, item and builder pages redone in the new style, and better feedback screens
-- [ ] **December 2026**: Expansive Claude lesson generation (automated generation with inline diagrams, charts, and relevant visual aids)
+- [x] **December 2026**: Expansive Claude lesson generation (automated generation with inline diagrams, charts, and relevant visual aids)
 - [x] **NON-AI FEATURE: Late December 2026**: Manual/Local course builder (create and edit custom directory structures and course syllabi locally without requiring Claude)
 
 ### Future / Unscheduled (When I get to it)

@@ -44,11 +44,33 @@ You work inside SelfSemester, a desktop app that turns a subject into a complete
 deadlines and marks. The learner studies alone; you are not available while they study, so everything you write must \
 stand on its own. Rules: prefer free and openly licensed sources (OpenStax, MIT OpenCourseWare, LibreTexts, arXiv, \
 official documentation); only mention paid or copyrighted material when nothing free covers a topic, and mark it \
-\"get this yourself\"; never suggest bypassing paywalls. Explain in your own words, with short quotes at most. Use \
-Markdown, and LaTeX for maths ($inline$, $$display$$). Be accurate; when unsure, say so rather than guess. \
+\"get this yourself\"; never suggest bypassing paywalls. Explain in your own words, with short quotes at most. Never copy figures, diagrams, photos, \
+screenshots or logos from a source: draw your own original figure instead, or point the learner to the source's \
+figure by title and number. Use Markdown, and LaTeX for maths ($inline$, $$display$$). Be accurate; when unsure, say \
+so rather than guess. \
 In examples use made-up names, usernames, emails and folder paths (such as Alex or C:\\Users\\alex), never the \
 learner's real name, username, email or anything else about this computer. \
 Answer only with JSON matching the given schema.";
+
+/// How to put figures in a lesson. The app draws plots itself and cleans diagrams before showing them
+/// (src/lib/figures.ts); figures are numbered in order of appearance.
+pub const FIGURES_GUIDE: &str = r#"FIGURES. Lessons can show figures, and in many subjects they are essential: maths, physics, chemistry, engineering, statistics, economics, computing, music theory, geography, biology, and any course about using a particular app or tool. Use a figure wherever a picture explains better than words (graphs, geometry, vectors and forces, circuits, processes and flowcharts, data, the layout of an app's window), and skip it where it adds nothing. Two kinds, each a fenced block on its own:
+
+1. Plots, drawn exactly by the app from the maths (prefer these for any graph of a function or data):
+```plot
+caption: y = x^2 and its tangent line at x = 1
+{"x": [-3, 3], "y": [-2, 9], "xlabel": "x", "ylabel": "y", "curves": [{"f": "x^2", "label": "y = x^2"}, {"f": "2x - 1", "label": "tangent", "dashed": true}], "points": [{"x": 1, "y": 1, "label": "(1, 1)"}]}
+```
+The JSON may use: x [min, max] (required); y [min, max]; xlabel; ylabel; equal (true for geometry and vectors so circles stay round); curves [{f, label, dashed, domain}]; data [{points: [[x, y], ...], label, line}]; points [{x, y, label}]; vectors [{from, to, label}]; fills [{f, g, from, to, label}] to shade the area between f and g (g defaults to 0); lines [{x} or {y}, label] for reference lines such as asymptotes. Expressions use x with + - * / ^, parentheses, pi, e, and sin cos tan asin acos atan sinh cosh tanh exp ln log sqrt abs. Use exact values; the app computes the curve.
+
+2. Diagrams, an original SVG you draw:
+```diagram
+caption: Forces on a block resting on a slope
+<svg viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg">...</svg>
+```
+Draw with stroke="currentColor" and fill="none" (or fill="currentColor" for text and arrowheads) so it works in light and dark themes, and use class="c1" to "c6" for coloured strokes, "f1" to "f6" for coloured fills, "a1" to "a6" for soft shaded areas, "t1" to "t6" for coloured text, "dash" for dashed lines and "muted" for faint guides. Plain shapes, lines, paths, polygons, text and arrowhead markers only: no scripts, links, external images, embedded fonts or CSS. Keep text at font-size 13 to 16, label everything the text refers to, and check every coordinate against the maths or physics it shows. For a course about an app, draw a simple labelled outline of the relevant part of the window in your own style, not a copy of the real interface, logo or icons.
+
+Every figure needs a caption line. The app adds the number itself (Figure 1, Figure 2, ... in order of appearance), so don't write "Figure 1" in the caption. Refer to each figure in the text by that number, and explain what the learner should notice. If a figure is closely based on one in an openly licensed source (for example CC BY), add a line after the caption: "credit: Adapted from <title>, <author or organisation>, <licence>". For copyrighted figures, screenshots or photos, never reproduce them: draw an original figure that teaches the same idea, or tell the learner where to look ("see Figure 2.4 in <title>"). Write all maths in LaTeX, including symbols in captions ($F = ma$)."#;
 
 /// The app can currently capture these kinds of work.
 pub const SUPPORTED_MODULES: &str = "written answers (typed text, Markdown, LaTeX), photo or PDF uploads \
@@ -278,8 +300,9 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
     let prompt = format!(
         "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{fix}\n\
          - lesson.markdown: a complete self-study lesson (roughly {mins} minutes of reading): explanations, worked \
-           examples with full working, common mistakes, a short summary, and which reading-list sources to read \
-           (cite by title). Put lesson.sources_used = the URLs you relied on.\n\
+           examples with full working, figures where the subject needs them (see FIGURES below), common mistakes, \
+           a short summary, and which reading-list sources to read (cite by title). Put lesson.sources_used = the \
+           URLs you relied on. Subject family: {family}.\n\
          - items: the graded work released with this unit, using only kinds with a non-zero weight. Usually one \
            homework or assignment plus a short quiz; add the exam if this unit has one. Keys like '{key}-hw', \
            '{key}-quiz', '{key}-exam'.\n\
@@ -291,12 +314,14 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
            points must sum to the item's total question points.\n\
          - answer_key: a full worked answer for EVERY question (this stays sealed and is used for marking).\n\
          - due_days: 2-14 days after release, matching the workload; quizzes 2-4, exams 1-3.\n\
-         - The app can capture: {SUPPORTED_MODULES} Don't set work it can't capture.",
+         - The app can capture: {SUPPORTED_MODULES} Don't set work it can't capture. Questions and answer keys can \
+           use figures too, in the same format.\n\n{FIGURES_GUIDE}",
         ctx = course_context(plan, sources),
         key = u.key,
         title = u.title,
         topics = u.topics.join(", "),
         mins = (plan.pacing.hours_per_week * 60.0 * 0.4).round().max(20.0),
+        family = if plan.domain_family.is_empty() { "general" } else { plan.domain_family.as_str() },
     );
     req(exam_tier, HOUSE_RULES, prompt, unit_schema(), &[])
 }
@@ -318,7 +343,11 @@ pub fn validate(plan: &Plan, unit_key: &str, content: &UnitContent) -> StageRequ
         "Course: {}. Unit {unit_key}.\nCheck this generated unit as a careful second marker:\n{}\n\n\
          For every question: is it solvable from the lesson, is the answer key correct (re-derive numeric answers), \
          does the mcq answer exactly match one option, and do rubric points add up to the question points? Is the \
-         lesson accurate? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
+         lesson accurate? For every figure (```plot or ```diagram block): does it match the maths or facts it shows \
+         (re-check plotted functions, points and labels), does it have a caption, is it referred to by its number \
+         (the app adds \"Figure N.\" to each caption itself, in order, so a caption without a number is correct), and is it original rather than a copy of a source's figure, screenshot or \
+         logo? Is every formula written in LaTeX? Would a figure be clearly needed where there is none (for \
+         example a graph described only in words)? Report each problem; severity 'major' for wrong answers, unsolvable questions or factual \
          errors, 'minor' for wording. ok=true only if there are no major issues.",
         plan.title,
         serde_json::to_string(content).unwrap_or_default()
@@ -428,6 +457,22 @@ pub(crate) mod tests {
             "answer_key":[{"question_id":"q1","answer":"4","explanation":"","tolerance":0}],"due_days":3}]});
         let u: UnitContent = serde_json::from_value(unit).unwrap();
         assert_eq!(u.items[0].questions[0].kind, "numeric");
+    }
+
+    #[test]
+    fn lessons_are_asked_for_figures_and_checked_for_them() {
+        let plan: Plan = serde_json::from_value(sample_plan()).unwrap();
+        let unit = unit(&plan, &[], "u01", None);
+        assert!(unit.prompt.contains("```plot") && unit.prompt.contains("```diagram"));
+        assert!(unit.prompt.contains("Subject family: theory-maths"));
+        assert!(unit.prompt.contains("never reproduce them"));
+        assert!(HOUSE_RULES.contains("Never copy figures"));
+        let content: UnitContent = serde_json::from_value(json!({
+            "lesson": {"title": "Waves", "markdown": "x", "est_minutes": 30, "sources_used": []}, "items": []
+        }))
+        .unwrap();
+        let check = validate(&plan, "u01", &content);
+        assert!(check.prompt.contains("For every figure"));
     }
 
     #[test]

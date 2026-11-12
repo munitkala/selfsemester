@@ -13,7 +13,7 @@
   {#each patchNotes as n, i (n.version)}
     <details open={i === 0}>
       <summary>
-        <span class="version" class:next={n.version === "Next"}>{n.version === "Next" ? "This update" : n.version}</span>
+        <span class="version" class:next={i === 0}>{n.version === "Next" ? "This update" : n.version}</span>
         <strong>{n.title}</strong>
         {#if n.date}<span class="small muted">{date(n.date)}</span>{/if}
       </summary>

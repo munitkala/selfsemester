@@ -5,8 +5,31 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.5.0 (2026-11-11)
+
 The database moves to schema version 6, which adds a table for study time. Your data is backed up before the
 upgrade, as with every new schema.
+
+### Figures in lessons
+
+**Why:** maths, science and app courses were text only, and many ideas are hard to follow without a picture.
+
+- Lessons can now include figures, numbered in order (Figure 1, Figure 2) with a caption, and referred to in the
+  text by number.
+- **Plots** are drawn by the app from the maths Claude writes (functions, data, points, vectors, shaded areas and
+  reference lines), so a curve always matches its equation.
+- **Diagrams** are original drawings made for the lesson: forces, circuits, molecules, processes, or a simple
+  outline of an app's window. Anything active (scripts, links, outside images) is removed before they're shown, and
+  they follow the theme's colours.
+- Claude is asked to use figures wherever a subject needs them, to write all maths in LaTeX, never to copy figures,
+  screenshots, photos or logos, and to credit anything adapted from an openly licensed source in the caption. For a
+  copyrighted figure it draws its own version or says where to find the original.
+- The second-model check now also checks every figure against the maths, its caption and numbering, and whether it
+  looks copied.
+- `DISCLAIMER.md` explains how figures and pictures are handled and covers trademarks. Because the terms changed,
+  the first-launch notice is shown once more.
 
 ### Themes and display options
 

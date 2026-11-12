@@ -5,10 +5,11 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
-    version: "Next",
-    date: "",
+    version: "0.5.0",
+    date: "2026-11-11",
     title: "A fresh look",
     notes: [
+      "Figures in lessons: exact plots, original diagrams, numbered captions and credits.",
       "Themes: light, dark or system, with sepia, high contrast and more, plus any accent colour.",
       "Text size, density, corners, sidebar and page width options.",
       "Visual effects and animation you can turn down on slower computers.",

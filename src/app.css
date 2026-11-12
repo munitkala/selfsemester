@@ -341,3 +341,61 @@ tbody tr:hover td { background: color-mix(in oklch, var(--accent) 5%, transparen
 /* Page enter animation; skipped under reduced motion. */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 :root[data-motion="full"] .page-enter { animation: rise var(--slow) var(--ease) both; }
+
+/* Figures in lessons (see src/lib/figures.ts). Colour classes map to the theme's chart colours, so drawings and
+   plots read in light and dark themes: cN = stroke, fN = fill, tN = text, aN = soft area fill. */
+.figure { margin: 1.6rem 0; max-width: 42rem; }
+.figure-art {
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+}
+.figure-art svg { display: block; width: 100%; height: auto; max-height: 30rem; overflow: visible; }
+.figure figcaption { margin-top: 0.5rem; font-size: 0.9rem; color: var(--muted); line-height: 1.5; }
+.figure figcaption strong { color: var(--text); }
+.figure .credit { display: block; font-size: 0.8rem; margin-top: 0.15rem; }
+.figure-error { margin: 0; color: var(--warn); font-size: 0.9rem; }
+.figure-legend { list-style: none; padding: 0; margin: 0.45rem 0 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.86rem; }
+.figure-legend li { display: flex; align-items: center; gap: 0.4rem; }
+.figure-legend .key { width: 1.4rem; height: 0; border-top: 3px solid; }
+.figure-legend .key.dash { border-top-style: dashed; }
+.figure svg text { font-family: inherit; font-size: 13px; }
+.figure svg.drawn text:not([fill]) { fill: currentColor; }
+.figure .plot .grid { stroke: var(--line); stroke-width: 1; }
+.figure .plot .axis { stroke: var(--muted); stroke-width: 1.4; }
+.figure .plot .tick { fill: var(--muted); font-size: 11px; }
+.figure .plot .label { fill: var(--text); font-size: 12px; }
+.figure .plot .note { fill: var(--text); font-size: 12px; }
+.figure .plot .curve { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+.figure .plot .vec { stroke-width: 2.4; }
+.figure .plot .ref { stroke: var(--muted); stroke-width: 1.2; }
+.figure .plot .dot { stroke: var(--panel); stroke-width: 1.5; }
+.figure .dash { stroke-dasharray: 6 5; }
+.figure .c1, .figure-legend .c1 { stroke: var(--chart-1); border-color: var(--chart-1); }
+.figure .c2, .figure-legend .c2 { stroke: var(--chart-2); border-color: var(--chart-2); }
+.figure .c3, .figure-legend .c3 { stroke: var(--chart-3); border-color: var(--chart-3); }
+.figure .c4, .figure-legend .c4 { stroke: var(--chart-4); border-color: var(--chart-4); }
+.figure .c5, .figure-legend .c5 { stroke: var(--chart-5); border-color: var(--chart-5); }
+.figure .c6, .figure-legend .c6 { stroke: var(--chart-6); border-color: var(--chart-6); }
+.figure .f1 { fill: var(--chart-1); } .figure .f2 { fill: var(--chart-2); } .figure .f3 { fill: var(--chart-3); }
+.figure .f4 { fill: var(--chart-4); } .figure .f5 { fill: var(--chart-5); } .figure .f6 { fill: var(--chart-6); }
+.figure .t1 { fill: var(--chart-1); } .figure .t2 { fill: var(--chart-2); } .figure .t3 { fill: var(--chart-3); }
+.figure .t4 { fill: var(--chart-4); } .figure .t5 { fill: var(--chart-5); } .figure .t6 { fill: var(--chart-6); }
+.figure .a1 { fill: color-mix(in oklch, var(--chart-1) 22%, transparent); } .figure .a2 { fill: color-mix(in oklch, var(--chart-2) 22%, transparent); }
+.figure .a3 { fill: color-mix(in oklch, var(--chart-3) 22%, transparent); } .figure .a4 { fill: color-mix(in oklch, var(--chart-4) 22%, transparent); }
+.figure .a5 { fill: color-mix(in oklch, var(--chart-5) 22%, transparent); } .figure .a6 { fill: color-mix(in oklch, var(--chart-6) 22%, transparent); }
+.figure .muted { stroke: var(--muted); } .figure text.muted { fill: var(--muted); stroke: none; }
+.figure .soft { fill: var(--raised); }
+.figure .thin { stroke-width: 1; }
+.figure text.c1, .figure text.c2, .figure text.c3, .figure text.c4, .figure text.c5, .figure text.c6 { stroke: none; }
+/* Labels on plots get a halo in the background colour so lines underneath don't make them hard to read. */
+.figure .plot .note { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+.figure-legend .key.area { width: 0.9rem; height: 0.9rem; border-top: 0; border-radius: 3px; }
+.figure-legend .key.a1 { background: color-mix(in oklch, var(--chart-1) 35%, transparent); }
+.figure-legend .key.a2 { background: color-mix(in oklch, var(--chart-2) 35%, transparent); }
+.figure-legend .key.a3 { background: color-mix(in oklch, var(--chart-3) 35%, transparent); }
+.figure-legend .key.a4 { background: color-mix(in oklch, var(--chart-4) 35%, transparent); }
+.figure-legend .key.a5 { background: color-mix(in oklch, var(--chart-5) 35%, transparent); }
+.figure-legend .key.a6 { background: color-mix(in oklch, var(--chart-6) 35%, transparent); }

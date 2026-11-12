@@ -159,7 +159,7 @@ async fn backup_now(state: tauri::State<'_, AppState>) -> Res<String> {
 // ---------- terms notice ----------
 
 /// Bump when the first-launch notice changes, so everyone sees the new version once.
-const NOTICE_KEY: &str = "notice_v2_accepted_at";
+const NOTICE_KEY: &str = "notice_v3_accepted_at";
 
 #[tauri::command]
 fn notice_accepted(state: tauri::State<'_, AppState>) -> Res<bool> {

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Copied or harmful content in a course
+    url: https://github.com/munitkala/selfsemester/blob/main/DISCLAIMER.md#5-copyright-and-other-peoples-material
+    about: How course content and figures are handled, and how to report something that looks copied

@@ -564,4 +564,70 @@ mod live_tests {
         let _v: Validation = serde_json::from_value(run("5-validate", &prompts::validate(&plan, &key, &unit))).unwrap();
         println!("saved to {}", out_dir.display());
     }
+    /// One unit of a sample course written by real Claude Code calls through the normal lesson and checking prompts,
+    /// for the README's example lessons. Uses plan usage; opt-in, one subject per run:
+    /// `SS_SAMPLE=calculus SS_LIVE_OUT=<dir> cargo test --lib -- --ignored live_sample_unit --nocapture`
+    /// Subjects: calculus, physics, statistics, chemistry, algorithms, spreadsheets.
+    #[test]
+    #[ignore]
+    fn live_sample_unit() {
+        let which = std::env::var("SS_SAMPLE").expect("SS_SAMPLE");
+        let out_dir = std::env::var("SS_LIVE_OUT").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join("ss-live"));
+        std::fs::create_dir_all(&out_dir).unwrap();
+        let src = |title: &str, url: &str, licence: &str, attribution: &str| {
+            json!({"url": url, "title": title, "licence": licence, "attribution": attribution, "free": true, "unit_keys": ["u01"], "note": ""})
+        };
+        let (title, summary, family, unit, topics, source) = match which.as_str() {
+            "calculus" => ("Calculus I", "Limits, derivatives and their uses, for first-year university students.", "theory-maths",
+                "Derivatives and tangent lines", vec!["slope of a tangent line", "derivative as a limit", "power rule", "reading a graph of f and f'"],
+                src("Calculus Volume 1", "https://openstax.org/details/books/calculus-volume-1", "CC BY-NC-SA 4.0", "OpenStax, Rice University")),
+            "physics" => ("Introductory Mechanics", "Forces and motion, the first half of a first-year physics course.", "physics",
+                "Newton's laws and forces on a slope", vec!["free-body diagrams", "resolving forces on an incline", "friction", "Newton's second law"],
+                src("University Physics Volume 1", "https://openstax.org/details/books/university-physics-volume-1", "CC BY 4.0", "OpenStax, Rice University")),
+            "statistics" => ("Introductory Statistics", "Describing data and reasoning with probability distributions.", "statistics",
+                "The normal distribution", vec!["the normal curve", "z-scores", "the 68-95-99.7 rule", "areas under the curve"],
+                src("Introductory Statistics 2e", "https://openstax.org/details/books/introductory-statistics-2e", "CC BY 4.0", "OpenStax, Rice University")),
+            "chemistry" => ("General Chemistry", "Atoms, bonding and molecular structure for a first chemistry course.", "chemistry",
+                "Molecular shapes and VSEPR theory", vec!["electron domains", "VSEPR shapes", "bond angles", "lone pairs"],
+                src("Chemistry 2e", "https://openstax.org/details/books/chemistry-2e", "CC BY 4.0", "OpenStax, Rice University")),
+            "algorithms" => ("Algorithms and Data Structures", "Classic algorithms and how to reason about their cost.", "computing",
+                "Binary search and logarithmic time", vec!["searching a sorted list", "binary search step by step", "O(log n) growth", "off-by-one errors"],
+                src("Open Data Structures", "https://opendatastructures.org/", "CC BY 2.5", "opendatastructures.org")),
+            "spreadsheets" => ("Spreadsheets with LibreOffice Calc", "Practical spreadsheets for budgets and reports, using LibreOffice Calc.", "software-tool",
+                "Formulas, cell references and charts", vec!["entering formulas", "relative and absolute references", "SUM and AVERAGE", "making a chart"],
+                src("Calc Guide", "https://documentation.libreoffice.org/en/english-documentation/", "GPL-3.0 or CC BY 4.0", "LibreOffice Documentation Team")),
+            other => panic!("unknown sample {other}"),
+        };
+        let plan: Plan = serde_json::from_value(json!({
+            "title": title, "summary": summary, "bundle": {"detected": false, "parts": [], "recommendation": ""},
+            "mode": "offline", "dependencies": [], "pacing": {"total_weeks": 8, "hours_per_week": 2, "fits_user_hours": true, "note": ""},
+            "units": [{"key": "u01", "title": unit, "week": 1, "topics": topics, "exam": "none"}],
+            "weights": {"homework": 0.4, "assignment": 0, "quiz": 0.2, "test": 0, "exam": 0.4, "project": 0},
+            "readiness": {"delivery": [], "marking": [], "overall_delivery": "High", "overall_marking": "High", "weak_spots": [], "basis": ""},
+            "domain_family": family, "unsupported_inputs": []
+        }))
+        .unwrap();
+        let sources: Vec<SourceEntry> = vec![serde_json::from_value(source).unwrap()];
+        let work = tempfile::tempdir().unwrap();
+        let r = CliRunner::new(work.path().to_path_buf());
+        let t = std::time::Instant::now();
+        let o = r.run(&prompts::unit(&plan, &sources, "u01", None)).unwrap_or_else(|e| panic!("unit: {e}"));
+        println!("{which} unit: {} in {:.0}s, out {} tokens", o.model, t.elapsed().as_secs_f64(), o.usage.output_tokens);
+        let mut unit_value = o.value;
+        let mut unit: UnitContent = serde_json::from_value(unit_value.clone()).unwrap();
+        let mut v = r.run(&prompts::validate(&plan, "u01", &unit)).unwrap_or_else(|e| panic!("validate: {e}"));
+        // Same rule as a real course: major problems send the unit back once, with the checker's notes.
+        let check: Validation = serde_json::from_value(v.value.clone()).unwrap();
+        let major: Vec<&Issue> = check.issues.iter().filter(|i| i.severity == "major").collect();
+        if !major.is_empty() {
+            let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
+            println!("{which}: {} major issue(s), rewriting", major.len());
+            unit_value = r.run(&prompts::unit(&plan, &sources, "u01", Some(&fb))).unwrap_or_else(|e| panic!("rewrite: {e}")).value;
+            unit = serde_json::from_value(unit_value.clone()).unwrap();
+            v = r.run(&prompts::validate(&plan, "u01", &unit)).unwrap_or_else(|e| panic!("validate: {e}"));
+        }
+        std::fs::write(out_dir.join(format!("{which}-unit.json")), serde_json::to_string_pretty(&unit_value).unwrap()).unwrap();
+        std::fs::write(out_dir.join(format!("{which}-validate.json")), serde_json::to_string_pretty(&v.value).unwrap()).unwrap();
+        println!("saved {which} to {}", out_dir.display());
+    }
 }
