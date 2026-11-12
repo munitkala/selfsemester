@@ -127,68 +127,11 @@ pub fn build(
         units.push((unit_id, u.key.clone(), u.week.max(1), content));
     }
 
-    // Weight per kind, split evenly across that kind's items; kinds with no items drop out and the rest re-normalise.
-    let mut count = std::collections::HashMap::<String, usize>::new();
-    for (_, _, _, c) in &units {
-        for it in &c.items {
-            *count.entry(it.kind.clone()).or_default() += 1;
-        }
-    }
-    let used: f64 = count.keys().map(|k| kind_weight(&plan.weights, k)).sum();
-    let even = 1.0 / count.values().sum::<usize>().max(1) as f64;
-
     let mut n = 0;
     for (unit_id, key, week, content) in &units {
-        let day0 = start + Duration::days(7 * (*week as i64 - 1));
-        let release = local_at(day0, 8, 0);
-
-        // The lesson.
-        let lesson_id = format!("{course_id}:{key}:lesson");
-        let lesson_ref = format!("items/{key}-lesson.md");
-        std::fs::create_dir_all(dir.join("items"))?;
-        std::fs::write(dir.join(&lesson_ref), format!("# {}\n\n{}", content.lesson.title, content.lesson.markdown))?;
-        conn.execute(
-            "INSERT INTO items(id, course_id, unit_id, seq, kind, title, module, release_at, content_ref)
-             VALUES (?1,?2,?3,0,'lesson',?4,'none',?5,?6)",
-            params![lesson_id, course_id, unit_id, content.lesson.title, ts(release), lesson_ref],
-        )
-        .map_err(io)?;
-        n += 1;
-
-        for (i, it) in content.items.iter().enumerate() {
-            let id = format!("{course_id}:{key}:{}", i + 1);
-            let rel = if it.kind == "exam" { release + Duration::days(5) } else { release };
-            let rel_local = rel.with_timezone(&Local).date_naive();
-            let due = local_at(rel_local + Duration::days(it.due_days.clamp(1, 21) as i64), 23, 59);
-            let sealed = matches!(it.kind.as_str(), "exam" | "test");
-            let public = ItemPublic {
-                title: it.title.clone(),
-                kind: it.kind.clone(),
-                module: it.module.clone(),
-                instructions: it.instructions.clone(),
-                questions: it.questions.clone(),
-                rubric: it.rubric.clone(),
-            };
-            let content_ref = format!("{}/{key}-{}.json", if sealed { "sealed" } else { "items" }, i + 1);
-            let key_ref = format!("sealed/{key}-{}.key", i + 1);
-            sealer.write_json(&dir.join(&content_ref), &public, sealed)?;
-            sealer.write_json(&dir.join(&key_ref), &ItemKey { answer_key: it.answer_key.clone() }, true)?;
-            let weight = if used > 0.0 {
-                kind_weight(&plan.weights, &it.kind) / used / count[&it.kind] as f64
-            } else {
-                even
-            };
-            conn.execute(
-                "INSERT INTO items(id, course_id, unit_id, seq, kind, title, module, points, weight, release_at, due_at,
-                                   sealed, content_ref, key_ref)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
-                params![id, course_id, unit_id, (i + 1) as i64, it.kind, it.title, it.module, item_points(it), weight,
-                        ts(rel), ts(due), sealed, content_ref, key_ref],
-            )
-            .map_err(io)?;
-            n += 1;
-        }
+        n += schedule_unit(conn, &dir, sealer, course_id, unit_id, key, *week, content, start, None)?;
     }
+    reweight(conn, course_id, &plan.weights).map_err(io)?;
     let first = local_at(start, 8, 0);
     let last_due: Option<String> = conn
         .query_row("SELECT max(due_at) FROM items WHERE course_id=?1", [course_id], |r| r.get(0))
@@ -199,6 +142,117 @@ pub fn build(
     )
     .map_err(io)?;
     Ok(n)
+}
+
+/// Share of the final grade for each graded item: each kind's weight, split evenly across that kind's items. Kinds
+/// with no items drop out and the rest are scaled back up to 100%. Run after items are added.
+pub fn reweight(conn: &Connection, course_id: &str, weights: &Weights) -> rusqlite::Result<()> {
+    let mut st = conn.prepare("SELECT kind, count(*) FROM items WHERE course_id=?1 AND kind != 'lesson' GROUP BY kind")?;
+    let counts: Vec<(String, i64)> = st.query_map([course_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    let used: f64 = counts.iter().map(|(k, _)| kind_weight(weights, k)).sum();
+    let total: i64 = counts.iter().map(|(_, c)| c).sum();
+    for (kind, count) in &counts {
+        let w = if used > 0.0 { kind_weight(weights, kind) / used / *count as f64 } else { 1.0 / total.max(1) as f64 };
+        conn.execute("UPDATE items SET weight=?3 WHERE course_id=?1 AND kind=?2", params![course_id, kind, w])?;
+    }
+    Ok(())
+}
+
+/// Schedule one unit: its lesson at 08:00 local on the first day of its week, then its graded work. With
+/// `not_before`, nothing is released earlier than that (for weeks added to a course that's already running).
+/// Weights are set afterwards by `reweight`.
+#[allow(clippy::too_many_arguments)]
+pub fn schedule_unit(
+    conn: &Connection,
+    dir: &std::path::Path,
+    sealer: &Sealer,
+    course_id: &str,
+    unit_id: &str,
+    key: &str,
+    week: u32,
+    content: &UnitContent,
+    start: NaiveDate,
+    not_before: Option<DateTime<Utc>>,
+) -> std::io::Result<usize> {
+    let io = |e: rusqlite::Error| std::io::Error::other(e);
+    let day0 = start + Duration::days(7 * (week.max(1) as i64 - 1));
+    let mut release = local_at(day0, 8, 0);
+    if let Some(t) = not_before {
+        release = release.max(t);
+    }
+
+    let lesson_id = format!("{course_id}:{key}:lesson");
+    let lesson_ref = format!("items/{key}-lesson.md");
+    std::fs::create_dir_all(dir.join("items"))?;
+    std::fs::write(dir.join(&lesson_ref), format!("# {}\n\n{}", content.lesson.title, content.lesson.markdown))?;
+    if !content.lesson.files.is_empty() {
+        std::fs::write(dir.join(lesson_files_ref(key)), serde_json::to_string(&content.lesson.files)?)?;
+    }
+    conn.execute(
+        "INSERT INTO items(id, course_id, unit_id, seq, kind, title, module, release_at, content_ref)
+         VALUES (?1,?2,?3,0,'lesson',?4,'none',?5,?6)",
+        params![lesson_id, course_id, unit_id, content.lesson.title, ts(release), lesson_ref],
+    )
+    .map_err(io)?;
+    for (i, it) in content.items.iter().enumerate() {
+        schedule_item(conn, dir, sealer, course_id, unit_id, key, i + 1, it, release, not_before)?;
+    }
+    Ok(1 + content.items.len())
+}
+
+/// Where a lesson's attached documents are listed, next to the lesson itself.
+pub fn lesson_files_ref(key: &str) -> String {
+    format!("items/{key}-lesson.files.json")
+}
+
+/// Schedule one piece of graded work in a unit released at `unit_release` (exams 5 days later). Its weight is 0
+/// until `reweight` runs.
+#[allow(clippy::too_many_arguments)]
+pub fn schedule_item(
+    conn: &Connection,
+    dir: &std::path::Path,
+    sealer: &Sealer,
+    course_id: &str,
+    unit_id: &str,
+    key: &str,
+    index: usize,
+    it: &GenItem,
+    unit_release: DateTime<Utc>,
+    not_before: Option<DateTime<Utc>>,
+) -> std::io::Result<()> {
+    let io = |e: rusqlite::Error| std::io::Error::other(e);
+    let id = format!("{course_id}:{key}:{index}");
+    let mut rel = if it.kind == "exam" { unit_release + Duration::days(5) } else { unit_release };
+    if let Some(t) = not_before {
+        rel = rel.max(t);
+    }
+    let rel_local = rel.with_timezone(&Local).date_naive();
+    let due = local_at(rel_local + Duration::days(it.due_days.clamp(1, 21) as i64), 23, 59);
+    let sealed = matches!(it.kind.as_str(), "exam" | "test");
+    let public = ItemPublic {
+        title: it.title.clone(),
+        kind: it.kind.clone(),
+        module: it.module.clone(),
+        instructions: it.instructions.clone(),
+        questions: it.questions.clone(),
+        rubric: it.rubric.clone(),
+        files: it.files.clone(),
+    };
+    let content_ref = format!("{}/{key}-{index}.json", if sealed { "sealed" } else { "items" });
+    let key_ref = format!("sealed/{key}-{index}.key");
+    std::fs::create_dir_all(dir.join("items"))?;
+    std::fs::create_dir_all(dir.join("sealed"))?;
+    sealer.write_json(&dir.join(&content_ref), &public, sealed)?;
+    sealer.write_json(&dir.join(&key_ref), &ItemKey { answer_key: it.answer_key.clone() }, true)?;
+    conn.execute(
+        "INSERT INTO items(id, course_id, unit_id, seq, kind, title, module, points, weight, release_at, due_at,
+                           sealed, content_ref, key_ref)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,?9,?10,?11,?12,?13)",
+        params![id, course_id, unit_id, index as i64, it.kind, it.title, it.module, item_points(it),
+                ts(rel), ts(due), sealed, content_ref, key_ref],
+    )
+    .map_err(io)?;
+    Ok(())
 }
 
 /// Something the learner should hear about.

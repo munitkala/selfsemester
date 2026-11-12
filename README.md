@@ -13,7 +13,7 @@ of handwritten working back to Claude for marking against a rubric. Final marks 
 
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it the same way.
 
-> **Status: early (0.5.0).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.6.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
 
@@ -22,6 +22,8 @@ You can also write a course yourself in the **course builder**, with no Claude a
 - **Courses written for you**, planned around your goals, with a readiness report before anything is built
 - **Lessons with figures**: maths in LaTeX, graphs the app draws exactly from the equations, and original diagrams
   with numbered captions and credits
+- **Write your own course from documents you already have**: attach PDFs, Word files or slides to any lesson or
+  piece of work, start with just one lesson, and add weeks, quizzes and exams while the course runs
 - **A classroom for every course**: home, weekly modules, syllabus, gradebook and your own materials
 - **Real deadlines and marking**: quizzes marked instantly, written and handwritten work marked against a rubric,
   and a review thread to ask why
@@ -40,9 +42,9 @@ by the app and all the themes.
 
 ## What's new
 
-Version 0.5.0 adds figures in lessons, themes and display options, an Insights page, clearer marks and feedback,
-Ctrl+K to jump anywhere, and panels that rearrange as you resize the window. Version 0.4.1 was a security update,
-and 0.4.0 added the ready-made installer and backups before every update. The full list is in
+Version 0.6.0 lets you build a course from your own documents: attach PDFs, Word files or slides to any lesson or
+piece of work, start with just a name and a first lesson, and keep adding weeks and work while the course runs.
+Version 0.5.0 added figures in lessons, themes, an Insights page, clearer feedback and layouts that fit any window. The full list is in
 [CHANGELOG.md](CHANGELOG.md), and what's planned is in [ROADMAP.md](ROADMAP.md).
 
 

@@ -50,7 +50,7 @@
 </script>
 
 <h1 class="page-enter">Course builder</h1>
-<p class="lead">Write a course yourself: syllabus, lessons, questions, answer keys and rubrics. No Claude needed. Multiple-choice and numeric questions are marked by the app, and you mark written answers yourself against your own answer key.</p>
+<p class="lead">Write a course yourself, with no Claude needed. Start with just a title and a first lesson, typed or as a document you already have (a PDF, Word file or slides), and add weeks, homework, quizzes and exams whenever you like, even after it's published. Multiple-choice and numeric questions are marked by the app, and you mark written answers yourself against your own answer key.</p>
 
 {#if error}<p class="note bad">{error}</p>{/if}
 

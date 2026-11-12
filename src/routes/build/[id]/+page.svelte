@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, type Draft, type DraftUnit, type GenItem, type LatePolicy, type Question, type Strictness } from "#lib/api.ts";
+  import { api, type Draft, type DraftUnit, type LatePolicy, type Strictness } from "#lib/api.ts";
   import { render } from "#lib/markdown.ts";
   import { kindLabel, todayIso } from "#lib/format.ts";
   import { PALETTE, codeOf } from "#lib/course.ts";
@@ -10,6 +10,8 @@
   import KindIcon from "#lib/KindIcon.svelte";
   import Icon from "#lib/Icon.svelte";
   import ListEditor from "#lib/ListEditor.svelte";
+  import ItemEditor from "#lib/ItemEditor.svelte";
+  import AttachmentEditor from "#lib/AttachmentEditor.svelte";
 
   const id = $derived(page.params.id ?? "");
   let draft = $state<Draft | null>(null);
@@ -33,17 +35,13 @@
   let onTranscript = $state(true);
 
   const KINDS = ["homework", "assignment", "quiz", "test", "exam", "project"] as const;
-  const QTYPES: { v: Question["type"]; label: string }[] = [
-    { v: "mcq", label: "Multiple choice" },
-    { v: "numeric", label: "Number" },
-    { v: "short", label: "Short answer" },
-    { v: "long", label: "Long answer" },
-  ];
+  // The first three are all a course needs; the last two can wait, or be skipped.
   const STEPS = [
-    { id: "details", label: "Course details" },
-    { id: "grading", label: "Grading" },
-    { id: "units", label: "Weeks and work" },
+    { id: "start", label: "Name it" },
+    { id: "units", label: "Lessons and work" },
     { id: "publish", label: "Publish" },
+    { id: "details", label: "Course details (optional)" },
+    { id: "grading", label: "Grading (optional)" },
   ];
 
   $effect(() => {
@@ -53,7 +51,11 @@
       .then((r) => {
         // drafts from before course details existed
         r.draft.meta ??= { code: "", term: "", instructor: "", color: "", welcome: "", outcomes: [], objectives: {} };
-        r.draft.units.forEach((u) => (u.objectives ??= []));
+        r.draft.units.forEach((u) => {
+          u.objectives ??= [];
+          u.lesson_files ??= [];
+          u.items.forEach((it) => (it.files ??= []));
+        });
         draft = r.draft;
         problems = r.problems;
         saved = JSON.stringify(r.draft);
@@ -92,7 +94,8 @@
     if (!draft) return {} as Record<string, boolean>;
     const unitsOk = draft.units.length > 0 && !problems.some((p) => p.startsWith("Unit") || p.startsWith("Add at least"));
     return {
-      details: !!draft.title.trim() && !!draft.summary.trim() && draft.meta.outcomes.some((o) => o.trim()),
+      start: !!draft.title.trim(),
+      details: !!draft.summary.trim() && draft.meta.outcomes.some((o) => o.trim()),
       grading: weightTotal > 0,
       units: unitsOk,
       publish: problems.length === 0,
@@ -109,45 +112,18 @@
   function addUnit() {
     if (!draft) return;
     const week = Math.max(0, ...draft.units.map((u) => u.week)) + 1;
-    draft.units.push({ title: `Week ${week}`, week, topics: [], objectives: [], lesson_title: "", lesson: "", est_minutes: 30, items: [] });
+    draft.units.push({ title: `Week ${week}`, week, topics: [], objectives: [], lesson_title: "", lesson: "", lesson_files: [], est_minutes: 30, items: [] });
     openUnit = draft.units.length - 1;
   }
 
   function addItem(u: DraftUnit, kind: (typeof KINDS)[number]) {
-    u.items.push({ key: "", kind, title: kindLabel[kind], module: "", instructions: "", questions: [], rubric: [], answer_key: [], due_days: kind === "exam" ? 2 : 7 });
+    u.items.push({ key: "", kind, title: kindLabel[kind], module: "", instructions: "", questions: [], rubric: [], answer_key: [], due_days: kind === "exam" ? 2 : 7, files: [] });
   }
 
-  function nextQid(it: GenItem) {
-    let n = it.questions.length + 1;
-    while (it.questions.some((q) => q.id === `q${n}`)) n++;
-    return `q${n}`;
-  }
-
-  function addQuestion(it: GenItem, type: Question["type"]) {
-    const qid = nextQid(it);
-    it.questions.push({ id: qid, prompt: "", type, options: type === "mcq" ? ["", ""] : [], points: type === "long" ? 5 : 1 });
-    it.answer_key.push({ question_id: qid, answer: "", explanation: "", tolerance: 0 });
-  }
-
-  function removeQuestion(it: GenItem, i: number) {
-    const [q] = it.questions.splice(i, 1);
-    it.answer_key = it.answer_key.filter((k) => k.question_id !== q.id);
-  }
-
-  /** The answer-key entry for a question, made on first use. */
-  function keyOf(it: GenItem, q: Question) {
-    let k = it.answer_key.find((k) => k.question_id === q.id);
-    if (!k) {
-      it.answer_key.push({ question_id: q.id, answer: "", explanation: "", tolerance: 0 });
-      k = it.answer_key[it.answer_key.length - 1];
-    }
-    return k;
-  }
-
-  function setType(it: GenItem, q: Question, type: Question["type"]) {
-    q.type = type;
-    if (type === "mcq" && q.options.length < 2) q.options = ["", ""];
-    keyOf(it, q).answer = "";
+  /** A text or Markdown document becomes the lesson's text (added after anything already written). */
+  function useAsLesson(u: DraftUnit, text: string, name: string) {
+    u.lesson = u.lesson.trim() ? `${u.lesson.trim()}\n\n${text.trim()}` : text.trim();
+    if (!u.lesson_title.trim()) u.lesson_title = name.replace(/\.(md|markdown|txt)$/i, "");
   }
 
   const weightTotal = $derived(draft ? Object.values(draft.weights).reduce((a, b) => a + (Number(b) || 0), 0) : 0);
@@ -221,14 +197,22 @@
     </nav>
 
     <div class="content">
-      <!-- 1. Course details -->
-      <section class="card step" id="details">
-        <h2><span class="num">1</span> Course details</h2>
-        <p class="small muted">What learners see first: the course card, the welcome on the course home page, and the syllabus.</p>
+      <!-- 1. The only thing needed up front: a name -->
+      <section class="card step" id="start">
+        <h2><span class="num">1</span> Name it</h2>
+        <p class="small muted">
+          A course only needs a name and a first lesson to start. Everything else (more weeks, homework, quizzes, exams,
+          course details and grading) is optional, and can be added now or after the course is published.
+        </p>
         <div class="field">
           <label for="c-title">Course title</label>
           <input id="c-title" bind:value={draft.title} />
         </div>
+      </section>
+
+      <!-- Optional: course details -->
+      <details class="card step optional" id="details">
+        <summary><h2>Course details <span class="opt">optional</span></h2><span class="small muted">Code, term, instructor, colour, description, welcome message and outcomes</span></summary>
         <div class="cols">
           <div class="field">
             <label for="c-code">Course code <span class="hint">shown on the card</span></label>
@@ -277,12 +261,11 @@
           <span class="label">Learning outcomes <span class="hint">by the end of the course, learners will be able to…</span></span>
           <ListEditor bind:items={draft.meta.outcomes} label="Learning outcome" placeholder="e.g. Play the first ten moves of the Italian with a plan" add="Add an outcome" />
         </div>
-      </section>
+      </details>
 
-      <!-- 2. Grading -->
-      <section class="card step" id="grading">
-        <h2><span class="num">2</span> Grading</h2>
-        <p class="small muted">How much each kind of work counts. Only kinds the course uses count; they're scaled to make 100%.</p>
+      <!-- Optional: grading -->
+      <details class="card step optional" id="grading">
+        <summary><h2>Grading <span class="opt">optional</span></h2><span class="small muted">How much each kind of work counts. The defaults work; only kinds the course uses count, scaled to 100%.</span></summary>
         <div class="weights">
           {#each KINDS as k}
             {@const share = usedKinds.has(k) && usedTotal > 0 ? (Number(draft.weights[k]) || 0) / usedTotal : 0}
@@ -294,22 +277,26 @@
             </div>
           {/each}
         </div>
-      </section>
+      </details>
 
-      <!-- 3. Weeks and work -->
+      <!-- 2. Weeks and work -->
       <section class="step" id="units">
         <div class="spread step-head">
-          <h2><span class="num">3</span> Weeks and work</h2>
+          <h2><span class="num">2</span> Lessons and work</h2>
           <button class="ghost" onclick={addUnit}>Add a week</button>
         </div>
-        <p class="small muted">Every week follows the same pattern: objectives, a lesson, then graded work. Keeping it the same each week makes the course easy to follow.</p>
+        <p class="small muted">
+          Start with one week and its lesson: write it here, attach a document you already have (a PDF, Word file or
+          slides), or both. Graded work and more weeks are optional; you can add them now, or from the course's Modules
+          tab after it's published.
+        </p>
 
         {#each draft.units as u, ui (ui)}
           <section class="card unit" class:open={openUnit === ui}>
             <button class="unit-head" type="button" onclick={() => (openUnit = openUnit === ui ? -1 : ui)} aria-expanded={openUnit === ui}>
               <span class="wk-badge">Week {u.week}</span>
               <strong>{u.title || "Untitled week"}</strong>
-              <span class="small muted">{u.items.length} graded · {u.lesson.trim() ? "lesson written" : "no lesson yet"}</span>
+              <span class="small muted">{u.items.length} graded · {u.lesson.trim() ? "lesson written" : u.lesson_files?.length ? "lesson attached" : "no lesson yet"}</span>
               <span class="caret" aria-hidden="true">{openUnit === ui ? "▾" : "▸"}</span>
             </button>
 
@@ -325,6 +312,8 @@
                     <input id="u-week-{ui}" type="number" min="1" max="104" bind:value={u.week} />
                   </div>
                 </div>
+                <details class="more">
+                  <summary class="small">More about this week <span class="hint">objectives, topics, lesson title and reading time</span></summary>
                 <div class="field">
                   <span class="label">Objectives <span class="hint">by the end of this week, learners can…</span></span>
                   <ListEditor bind:items={u.objectives} label="Objective" placeholder="e.g. Name the main line of the Italian" add="Add an objective" />
@@ -334,7 +323,6 @@
                   <input id="u-topics-{ui}" value={u.topics.join(", ")} oninput={(e) => (u.topics = (e.currentTarget as HTMLInputElement).value.split(",").map((t) => t.trim()).filter(Boolean))} />
                 </div>
 
-                <h3 class="sub"><KindIcon kind="lesson" /> Lesson</h3>
                 <div class="cols">
                   <div class="field">
                     <label for="u-lt-{ui}">Lesson title <span class="hint">optional</span></label>
@@ -345,9 +333,16 @@
                     <input id="u-min-{ui}" type="number" min="1" bind:value={u.est_minutes} />
                   </div>
                 </div>
+                </details>
+
+                <h3 class="sub"><KindIcon kind="lesson" /> Lesson</h3>
+                <div class="field">
+                  <span class="label">Documents <span class="hint">already have the lesson as a PDF, Word file or slides? Attach it instead of typing</span></span>
+                  <AttachmentEditor courseId={id} bind:files={u.lesson_files} useAsText={(t, n) => useAsLesson(u, t, n)} hint="Text and Markdown files can become the lesson text." />
+                </div>
                 <div class="field">
                   <div class="spread">
-                    <label for="u-lesson-{ui}">Lesson text <span class="hint">Markdown, $x^2$ for maths</span></label>
+                    <label for="u-lesson-{ui}">Lesson text <span class="hint">optional if a document covers it; Markdown, $x^2$ for maths</span></label>
                     <button class="ghost small" type="button" onclick={() => (preview[`u${ui}`] = !preview[`u${ui}`])}>{preview[`u${ui}`] ? "Edit" : "Preview"}</button>
                   </div>
                   {#if preview[`u${ui}`]}
@@ -357,7 +352,7 @@
                   {/if}
                 </div>
 
-                <h3 class="sub">Graded work</h3>
+                <h3 class="sub">Graded work <span class="opt">optional</span></h3>
                 {#each u.items as it, ii (ii)}
                   <div class="item">
                     <div class="item-head">
@@ -365,112 +360,7 @@
                       <strong>{it.title || "Untitled"}</strong>
                       <span class="small muted">{it.questions.length} {it.questions.length === 1 ? "question" : "questions"} · due {it.due_days} {it.due_days === 1 ? "day" : "days"} after it opens</span>
                     </div>
-                    <div class="cols">
-                      <div class="field narrow">
-                        <label for="i-kind-{ui}-{ii}">Kind</label>
-                        <select id="i-kind-{ui}-{ii}" bind:value={it.kind}>
-                          {#each KINDS as k}<option value={k}>{kindLabel[k]}</option>{/each}
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label for="i-title-{ui}-{ii}">Title</label>
-                        <input id="i-title-{ui}-{ii}" bind:value={it.title} />
-                      </div>
-                      <div class="field narrow">
-                        <label for="i-due-{ui}-{ii}">Due after <span class="hint">days</span></label>
-                        <input id="i-due-{ui}-{ii}" type="number" min="1" max="21" bind:value={it.due_days} />
-                      </div>
-                    </div>
-                    <div class="field">
-                      <label for="i-ins-{ui}-{ii}">Instructions <span class="hint">Markdown</span></label>
-                      <textarea id="i-ins-{ui}-{ii}" rows="3" bind:value={it.instructions}></textarea>
-                    </div>
-
-                    {#each it.questions as q, qi (q.id)}
-                      {@const k = keyOf(it, q)}
-                      <div class="question">
-                        <div class="cols">
-                          <div class="field narrow">
-                            <label for="q-type-{ui}-{ii}-{qi}">Question {qi + 1}</label>
-                            <select id="q-type-{ui}-{ii}-{qi}" value={q.type} onchange={(e) => setType(it, q, (e.currentTarget as HTMLSelectElement).value as Question["type"])}>
-                              {#each QTYPES as t}<option value={t.v}>{t.label}</option>{/each}
-                            </select>
-                          </div>
-                          <div class="field narrow">
-                            <label for="q-pts-{ui}-{ii}-{qi}">Points</label>
-                            <input id="q-pts-{ui}-{ii}-{qi}" type="number" min="0.5" step="0.5" bind:value={q.points} />
-                          </div>
-                          <div class="row end">
-                            <button class="ghost small" onclick={() => move(it.questions, qi, -1)} disabled={qi === 0}>Up</button>
-                            <button class="ghost small" onclick={() => move(it.questions, qi, 1)} disabled={qi === it.questions.length - 1}>Down</button>
-                            <button class="ghost small" onclick={() => removeQuestion(it, qi)}>Remove</button>
-                          </div>
-                        </div>
-                        <div class="field">
-                          <label for="q-p-{ui}-{ii}-{qi}" class="sr-only">Question</label>
-                          <textarea id="q-p-{ui}-{ii}-{qi}" rows="2" bind:value={q.prompt} placeholder="The question"></textarea>
-                        </div>
-                        {#if q.type === "mcq"}
-                          <fieldset class="field">
-                            <legend class="small">Options <span class="hint">tick the right one</span></legend>
-                            {#each q.options as _, oi}
-                              <div class="row option">
-                                <input type="radio" name="right-{ui}-{ii}-{q.id}" checked={k.answer !== "" && k.answer === q.options[oi]} onchange={() => (k.answer = q.options[oi])} aria-label="Option {oi + 1} is right" />
-                                <input
-                                  value={q.options[oi]}
-                                  oninput={(e) => {
-                                    const was = q.options[oi];
-                                    q.options[oi] = (e.currentTarget as HTMLInputElement).value;
-                                    if (k.answer === was && was !== "") k.answer = q.options[oi];
-                                  }}
-                                  placeholder="Option {oi + 1}"
-                                  aria-label="Option {oi + 1}"
-                                />
-                                <button class="ghost small" onclick={() => { if (k.answer === q.options[oi]) k.answer = ""; q.options.splice(oi, 1); }} disabled={q.options.length <= 2} aria-label="Remove option {oi + 1}">×</button>
-                              </div>
-                            {/each}
-                            <button class="ghost small" onclick={() => q.options.push("")}>Add option</button>
-                          </fieldset>
-                        {:else if q.type === "numeric"}
-                          <div class="cols">
-                            <div class="field">
-                              <label for="q-a-{ui}-{ii}-{qi}">Right answer</label>
-                              <input id="q-a-{ui}-{ii}-{qi}" inputmode="decimal" bind:value={k.answer} />
-                            </div>
-                            <div class="field narrow">
-                              <label for="q-tol-{ui}-{ii}-{qi}">Allowed error <span class="hint">±</span></label>
-                              <input id="q-tol-{ui}-{ii}-{qi}" type="number" min="0" step="any" bind:value={k.tolerance} />
-                            </div>
-                          </div>
-                        {:else}
-                          <div class="field">
-                            <label for="q-a-{ui}-{ii}-{qi}">Model answer <span class="hint">what you'll mark against</span></label>
-                            <textarea id="q-a-{ui}-{ii}-{qi}" rows="2" bind:value={k.answer}></textarea>
-                          </div>
-                        {/if}
-                        <div class="field">
-                          <label for="q-ex-{ui}-{ii}-{qi}">Explanation <span class="hint">optional, shown with the answer key</span></label>
-                          <input id="q-ex-{ui}-{ii}-{qi}" bind:value={k.explanation} />
-                        </div>
-                      </div>
-                    {/each}
-                    <div class="row">
-                      <span class="small muted">Add a question:</span>
-                      {#each QTYPES as t}<button class="ghost small" onclick={() => addQuestion(it, t.v)}>{t.label}</button>{/each}
-                    </div>
-
-                    <details class="rubric">
-                      <summary class="small">Rubric ({it.rubric.length}) <span class="hint">optional: what you mark work without questions on</span></summary>
-                      {#each it.rubric as r, ri}
-                        <div class="cols">
-                          <div class="field"><input bind:value={r.criterion} placeholder="Criterion" aria-label="Criterion" /></div>
-                          <div class="field narrow"><input type="number" min="0.5" step="0.5" bind:value={r.points} aria-label="Points" /></div>
-                          <div class="field"><input bind:value={r.description} placeholder="What earns the points" aria-label="Description" /></div>
-                          <button class="ghost small" onclick={() => it.rubric.splice(ri, 1)} aria-label="Remove rubric line">×</button>
-                        </div>
-                      {/each}
-                      <button class="ghost small" onclick={() => it.rubric.push({ criterion: "", points: 5, description: "" })}>Add a rubric line</button>
-                    </details>
+                    <ItemEditor bind:it={u.items[ii]} prefix="{ui}-{ii}" courseId={id} />
 
                     <div class="row tools">
                       <button class="ghost small" onclick={() => move(u.items, ii, -1)} disabled={ii === 0}>Move up</button>
@@ -508,7 +398,7 @@
 
       <!-- 4. Publish -->
       <form class="card step" id="publish" onsubmit={publish}>
-        <h2><span class="num">4</span> Publish</h2>
+        <h2><span class="num">3</span> Publish</h2>
         {#if problems.length}
           <p class="note">A few things to fix first:</p>
           <ul class="small problems">{#each problems as p}<li>{p}</li>{/each}</ul>
@@ -519,6 +409,8 @@
           <label for="start">Start date</label>
           <input id="start" type="date" bind:value={startDate} min={todayIso(0)} required style="max-width: 12rem" />
         </div>
+        <details class="more">
+          <summary class="small">Publishing options <span class="hint">late work, attempts and the transcript</span></summary>
         <fieldset class="field">
           <legend>When a deadline passes</legend>
           <label class="radio"><input type="radio" bind:group={lateKind} value="lock_zero" /> Lock the item and record zero</label>
@@ -532,7 +424,12 @@
         </fieldset>
         <StrictnessChoice bind:value={strictness} />
         <label class="radio"><input type="checkbox" bind:checked={onTranscript} /> Put the final mark on my transcript</label>
-        <p class="small muted">Publishing schedules the course from the start date like any other course. After that it can't be edited here, so export a copy first if you might want to change it later.</p>
+        </details>
+        <p class="small muted">
+          Publishing schedules the course from the start date like any other course. Afterwards you can keep adding
+          weeks, homework, quizzes and exams from the course's Modules tab; what's already there can't be changed, so
+          export a copy first if you might want to rewrite it.
+        </p>
         <div class="row">
           <button type="submit" disabled={busy || problems.length > 0 || dirty}>Publish the course</button>
           <button type="button" class="ghost" onclick={exportFolder} disabled={busy}>Export to a folder</button>
@@ -663,6 +560,69 @@
     font-size: 0.95rem;
     flex: none;
   }
+  .optional summary,
+  .more summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .optional summary::-webkit-details-marker,
+  .more summary::-webkit-details-marker {
+    display: none;
+  }
+  .optional summary h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+  .optional summary h2::before {
+    content: "+";
+    display: grid;
+    place-items: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    border: 1.5px dashed var(--accent-line);
+    color: var(--accent);
+    font-size: 1.1rem;
+  }
+  .optional[open] summary h2::before {
+    content: "−";
+  }
+  .optional summary .small {
+    display: block;
+    margin: 0.25rem 0 0 2.3rem;
+  }
+  .optional[open] summary {
+    margin-bottom: 1rem;
+  }
+  .opt {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+  }
+  .more {
+    margin: 0.4rem 0 0.8rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-sm);
+  }
+  .more summary {
+    font-weight: 600;
+  }
+  .more summary .hint {
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 0.4rem;
+  }
+  .more[open] summary {
+    margin-bottom: 0.6rem;
+  }
   .step-head {
     margin-top: 1.5rem;
   }
@@ -685,10 +645,6 @@
   }
   .cols > .field.narrow {
     flex: 0 1 8rem;
-  }
-  .end {
-    margin-bottom: 0.9rem;
-    gap: 0.3rem;
   }
   .swatches {
     display: flex;
@@ -825,25 +781,6 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .question {
-    border-left: 3px solid var(--accent-soft);
-    padding-left: 0.75rem;
-    margin: 0.75rem 0;
-  }
-  .option {
-    gap: 0.4rem;
-    margin: 0.2rem 0;
-    flex-wrap: nowrap;
-  }
-  .option input[type="radio"] {
-    width: auto;
-  }
-  .rubric {
-    margin: 0.5rem 0;
-  }
-  .rubric summary {
-    cursor: pointer;
-  }
   .tools {
     margin-top: 0.5rem;
     gap: 0.4rem;
@@ -903,13 +840,6 @@
   }
   .nowrap {
     white-space: nowrap;
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
   .danger-zone {
     margin-top: 2rem;

@@ -1,5 +1,6 @@
 //! Courses: the compile pipeline, schedule, marking, and the read models the UI shows.
 
+pub mod attachments;
 pub mod builder;
 pub mod insights;
 pub mod marking;
@@ -325,8 +326,10 @@ pub struct ItemView {
     pub late_policy: Value,
     /// Lesson Markdown (lessons only, once released).
     pub lesson: Option<String>,
-    /// Instructions, questions and rubric (graded items, once released).
+    /// Instructions, questions and rubric (graded items, once released). Its `files` are the work's documents.
     pub content: Option<types::ItemPublic>,
+    /// Documents attached to a lesson (courses written in the course builder).
+    pub files: Vec<types::Attachment>,
     pub submission: Option<Value>,
     pub mark: Option<Value>,
     /// Shown only after the item is marked.
@@ -364,9 +367,15 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
     let dir = paths.course_dir(&row.course_id);
     let released = row.state != "locked";
     let (mut lesson, mut content) = (None, None);
+    let mut files: Vec<types::Attachment> = vec![];
     if released {
         if row.kind == "lesson" {
             lesson = Some(std::fs::read_to_string(dir.join(&content_ref)).map_err(|e| e.to_string())?);
+            let key = content_ref.trim_start_matches("items/").trim_end_matches("-lesson.md");
+            files = std::fs::read_to_string(dir.join(schedule::lesson_files_ref(key)))
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default();
         } else {
             content = Some(sealer.read_json(&dir.join(&content_ref)).map_err(|e| e.to_string())?);
         }
@@ -444,6 +453,7 @@ pub fn item(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> R
         late_policy: json_col(Some(policy)),
         lesson,
         content,
+        files,
         submission,
         mark,
         answer_key,

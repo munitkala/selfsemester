@@ -135,6 +135,9 @@ export type CourseView = {
 
 export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
 
+/** A document attached to a lesson or a piece of work in a course written in the course builder. */
+export type Attachment = { name: string; file: string; bytes: number };
+
 export type Question = { id: string; prompt: string; type: "mcq" | "numeric" | "short" | "long"; options: string[]; points: number };
 export type RubricLine = { criterion: string; points: number; description: string };
 export type MarkLine = { criterion: string; awarded: number; possible: number; comment: string };
@@ -144,7 +147,9 @@ export type ItemView = {
   points: number;
   late_policy: LatePolicy;
   lesson: string | null;
-  content: { title: string; kind: string; module: string; instructions: string; questions: Question[]; rubric: RubricLine[] } | null;
+  content: { title: string; kind: string; module: string; instructions: string; questions: Question[]; rubric: RubricLine[]; files?: Attachment[] } | null;
+  /** Documents attached to a lesson. */
+  files: Attachment[];
   submission: {
     id: string;
     submitted_at: string;
@@ -190,6 +195,7 @@ export type GenItem = {
   rubric: RubricLine[];
   answer_key: { question_id: string; answer: string; explanation: string; tolerance: number }[];
   due_days: number;
+  files?: Attachment[];
 };
 
 export type DraftUnit = {
@@ -199,6 +205,7 @@ export type DraftUnit = {
   objectives: string[];
   lesson_title: string;
   lesson: string;
+  lesson_files?: Attachment[];
   est_minutes: number;
   items: GenItem[];
 };
@@ -270,6 +277,12 @@ export const api = {
     invoke<void>("builder_publish", { id, startDate, latePolicy, strictness, onTranscript }),
   builderExport: (id: string) => invoke<string>("builder_export", { id }),
   builderImport: (folder: string) => invoke<string>("builder_import", { folder }),
+  builderAttach: (id: string, files: string[]) => invoke<Attachment[]>("builder_attach", { id, files }),
+  builderFileText: (id: string, file: string) => invoke<string>("builder_file_text", { id, file }),
+  builderRemoveFile: (id: string, file: string) => invoke<void>("builder_remove_file", { id, file }),
+  openCourseFile: (courseId: string, file: string) => invoke<void>("open_course_file", { courseId, file }),
+  addWeek: (id: string, unit: DraftUnit) => invoke<string>("course_add_week", { id, unit }),
+  addWork: (id: string, unitKey: string, item: GenItem) => invoke<void>("course_add_work", { id, unitKey, item }),
   transcript: () => invoke<Transcript>("get_transcript"),
   openFolder: (path: string) => invoke<void>("open_folder", { path }),
   backups: () => invoke<BackupInfo[]>("list_backups"),

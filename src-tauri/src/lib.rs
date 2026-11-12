@@ -382,9 +382,49 @@ fn builder_export(state: tauri::State<'_, AppState>, id: String) -> Res<String> 
 
 #[tauri::command]
 fn builder_import(app: AppHandle, state: tauri::State<'_, AppState>, folder: String) -> Res<String> {
-    let id = builder::import(&state.db.lock().unwrap(), std::path::Path::new(&folder))?;
+    let id = builder::import(&state.db.lock().unwrap(), &state.paths, std::path::Path::new(&folder))?;
     changed(&app);
     Ok(id)
+}
+
+// ---------- documents in courses you write, and growing a published course ----------
+
+#[tauri::command]
+fn builder_attach(state: tauri::State<'_, AppState>, id: String, files: Vec<String>) -> Res<Vec<course::types::Attachment>> {
+    let files: Vec<std::path::PathBuf> = files.into_iter().map(std::path::PathBuf::from).collect();
+    course::attachments::add(&state.db.lock().unwrap(), &state.paths, &id, &files)
+}
+
+#[tauri::command]
+fn builder_file_text(state: tauri::State<'_, AppState>, id: String, file: String) -> Res<String> {
+    course::attachments::read_text(&state.paths, &id, &file)
+}
+
+#[tauri::command]
+fn builder_remove_file(state: tauri::State<'_, AppState>, id: String, file: String) -> Res<()> {
+    course::attachments::remove(&state.db.lock().unwrap(), &state.paths, &id, &file)
+}
+
+/// Open a lesson's or a piece of work's document in the learner's usual app.
+#[tauri::command]
+fn open_course_file(app: AppHandle, state: tauri::State<'_, AppState>, course_id: String, file: String) -> Res<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = course::attachments::path_of(&state.paths, &course_id, &file)?;
+    app.opener().open_path(path.display().to_string(), None::<&str>).map_err(err)
+}
+
+#[tauri::command]
+fn course_add_week(app: AppHandle, state: tauri::State<'_, AppState>, id: String, unit: builder::DraftUnit) -> Res<String> {
+    let key = builder::add_week(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, unit)?;
+    changed(&app);
+    Ok(key)
+}
+
+#[tauri::command]
+fn course_add_work(app: AppHandle, state: tauri::State<'_, AppState>, id: String, unit_key: String, item: course::types::GenItem) -> Res<()> {
+    builder::add_work(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id, &unit_key, item)?;
+    changed(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -488,6 +528,12 @@ pub fn run() {
             builder_publish,
             builder_export,
             builder_import,
+            builder_attach,
+            builder_file_text,
+            builder_remove_file,
+            open_course_file,
+            course_add_week,
+            course_add_work,
             get_transcript,
             record_study,
             get_insights,

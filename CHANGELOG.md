@@ -7,6 +7,26 @@ are listed under **Unreleased**.
 
 Nothing yet.
 
+## 0.6.0 (2026-11-12)
+
+### Build a course from your own documents
+
+**Why:** a lesson you already have as a PDF or slides shouldn't have to be typed out again, and a course you write
+shouldn't have to be finished before you can start it.
+
+- Any lesson or piece of work in the course builder can have documents attached: PDFs, Word files, slides,
+  spreadsheets, text, images, audio and video, up to 50 MB each. A lesson can be just a document, and a piece of
+  work can be just a worksheet. Text and Markdown files can also be turned into the lesson's text in one click.
+- Learners see the files above the lesson or in the work's instructions, and open them in their usual app.
+- Exported course folders keep files in readable places: `01 Week name\lesson files\` and
+  `01 Week name\work files\01 Homework title\`, and importing a folder brings them back.
+- A new course asks for the least it needs: a name and a first lesson. Course details, grading, extra weeks and
+  graded work are optional and folded away until you want them, and publishing options have sensible defaults.
+- **Grow a course while it runs.** A published course you wrote has an **Add to this course** section on its
+  Modules tab: add a new week, or homework, a quiz, an assignment, a test, an exam or a project to any week. New
+  work opens with its week, or straight away if the week has started. Grade shares are recalculated, and nothing
+  already released or marked changes.
+
 ## 0.5.0 (2026-11-11)
 
 The database moves to schema version 6, which adds a table for study time. Your data is backed up before the

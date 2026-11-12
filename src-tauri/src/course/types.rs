@@ -151,6 +151,19 @@ pub struct Lesson {
     pub markdown: String,
     pub est_minutes: u32,
     pub sources_used: Vec<String>,
+    /// Documents attached in the course builder (empty for courses Claude writes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<Attachment>,
+}
+
+/// A document attached to a lesson or a piece of work in a course written in the course builder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct Attachment {
+    /// The name the learner sees, usually the original file name.
+    pub name: String,
+    /// Where it is, relative to the course folder (always under `files/`).
+    pub file: String,
+    pub bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -167,6 +180,9 @@ pub struct GenItem {
     pub answer_key: Vec<KeyEntry>,
     /// Days between release and the deadline.
     pub due_days: u32,
+    /// Documents attached in the course builder (empty for courses Claude writes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -240,6 +256,8 @@ pub struct ItemPublic {
     pub instructions: String,
     pub questions: Vec<Question>,
     pub rubric: Vec<RubricLine>,
+    #[serde(default)]
+    pub files: Vec<Attachment>,
 }
 
 /// Private part, always sealed: the answer key.

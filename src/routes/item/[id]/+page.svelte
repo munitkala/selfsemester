@@ -11,6 +11,7 @@
   import Icon from "#lib/Icon.svelte";
   import Ring from "#lib/charts/Ring.svelte";
   import { trackStudy } from "#lib/study.ts";
+  import FileList from "#lib/FileList.svelte";
 
   const id = $derived(page.params.id ?? "");
   $effect(() => trackStudy(id));
@@ -215,6 +216,7 @@
     <div class="read-progress" class:in-focus={focus} style="transform: scaleX({readShare})" aria-hidden="true"></div>
     <div class="reader" class:focus bind:this={reader}>
       {#if focus}<button class="ghost exit" onclick={() => (focus = false)}>Exit reading mode</button>{/if}
+      <FileList courseId={v.item.course_id} files={v.files ?? []} title="Lesson files" />
       <article class="prose">{@html render(lessonBody)}</article>
       <div class="row end">
         {#if v.item.state === "open"}
@@ -230,6 +232,7 @@
   {:else if content}
     <section class="card prose-card">
       <div class="prose">{@html render(content.instructions)}</div>
+      <FileList courseId={v.item.course_id} files={content.files ?? []} title="Files for this work" />
       {#if content.questions.length}
         <ol class="questions">
           {#each content.questions as q (q.id)}

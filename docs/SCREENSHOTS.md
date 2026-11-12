@@ -198,12 +198,37 @@ is left. You can close this page; it carries on in the background.
 
 ### Course builder
 
-![Course builder with numbered steps and a live course card](../assets/screenshots/13-builder.png)
+![Course builder asking only for a name, with course details and grading folded away as optional](../assets/screenshots/13-builder.png)
 
-Write a course yourself in four steps: course details (title, code, term, instructor, colour, welcome message and
-outcomes), grading, weeks and work (lessons, questions, answer keys and rubrics), then publish. A live card shows how
-the course will look. Multiple-choice and numeric questions are marked by the app and you mark written answers
-against your own key, so these courses never use Claude. Drafts can be exported to a plain folder and imported back.
+Write a course yourself, with no Claude involved. It asks only for what a course needs to start: a name and a first
+lesson. Course details (code, term, instructor, colour, welcome message, outcomes) and grading are folded away as
+optional, and so are extra weeks and graded work. A live card shows how the course will look. Multiple-choice and
+numeric questions are marked by the app and you mark written answers against your own key.
+
+### Your own documents
+
+![A week in the course builder with a PDF and slides attached as the lesson](../assets/screenshots/23-builder-documents.png)
+
+Already have the lesson as a PDF, a Word file or slides? Attach it instead of typing, to the lesson or to any piece
+of work (a worksheet, a past paper). Text and Markdown files can be turned into the lesson text in one click. Files
+are copied into the course, so the originals can move. When you export a course, they're laid out by week:
+`01 Week name\lesson files\` and `01 Week name\work files\01 Homework title\`, and importing brings them back.
+
+### Files in a lesson
+
+![A lesson with its slides and worked examples listed above the text](../assets/screenshots/25-lesson-files.png)
+
+Learners see a lesson's documents above it, and a piece of work's documents with its instructions. Each opens in
+the learner's usual app.
+
+### Add to a course while it runs
+
+![The Modules tab with Add to this course: a new week, homework, quiz, assignment, test, exam or project](../assets/screenshots/24-add-to-course.png)
+
+A course you wrote doesn't have to be finished before it starts. Its Modules tab has **Add to this course**: a new
+week with its lesson, or homework, a quiz, an assignment, a test, an exam or a project in any week. New work opens
+with its week, or straight away if the week has started. Grade shares are recalculated, and nothing already
+released or marked changes.
 
 ## Your record and settings
 

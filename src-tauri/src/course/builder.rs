@@ -4,11 +4,16 @@
 //! plan and unit files a Claude-written course has, then schedules it with the same code. Written work in these
 //! courses is self-marked (see `marking::self_mark`); multiple choice and numeric questions are marked by the app.
 //!
-//! A draft can be exported to a plain folder (course.json, plus lesson.md and work.json per unit) and imported
-//! back, so it can be edited in any text editor.
+//! A draft can be exported to a plain folder (course.json, plus lesson.md and work.json per unit, and any attached
+//! documents in "lesson files" and "work files" folders) and imported back, so it can be edited in any text editor.
+//!
+//! A course doesn't have to be finished before it's published: a title and a first lesson are enough. Weeks and
+//! graded work can be added to a published course later (`add_week`, `add_work`), without touching anything already
+//! released or marked.
 
+use super::attachments;
 use super::pipeline;
-use super::schedule::{LatePolicy, Strictness};
+use super::schedule::{self, LatePolicy, Strictness};
 use super::seal::Sealer;
 use super::types::*;
 use crate::db;
@@ -49,6 +54,9 @@ pub struct DraftUnit {
     pub lesson_title: String,
     /// Markdown, with $...$ LaTeX.
     pub lesson: String,
+    /// Documents that make up or go with the lesson (a PDF of it, slides, worksheets).
+    #[serde(default)]
+    pub lesson_files: Vec<Attachment>,
     pub est_minutes: u32,
     /// Graded work. `key` and `module` are filled in when the course is published.
     pub items: Vec<GenItem>,
@@ -76,6 +84,7 @@ impl DraftUnit {
             objectives: vec![],
             lesson_title: String::new(),
             lesson: String::new(),
+            lesson_files: vec![],
             est_minutes: 30,
             items: vec![],
         }
@@ -152,8 +161,8 @@ pub fn problems(d: &Draft) -> Vec<String> {
         if u.week == 0 || u.week > 104 {
             out.push(format!("{at}: the week must be between 1 and 104."));
         }
-        if u.lesson.trim().is_empty() {
-            out.push(format!("{at}: the lesson is empty."));
+        if u.lesson.trim().is_empty() && u.lesson_files.is_empty() {
+            out.push(format!("{at}: write the lesson or attach a document for it."));
         }
         for (ii, it) in u.items.iter().enumerate() {
             let at = format!("{at}, work {} ({})", ii + 1, if it.title.trim().is_empty() { "untitled" } else { it.title.trim() });
@@ -166,8 +175,8 @@ pub fn problems(d: &Draft) -> Vec<String> {
             if it.due_days == 0 || it.due_days > 21 {
                 out.push(format!("{at}: the deadline must be 1 to 21 days after release."));
             }
-            if it.questions.is_empty() && it.instructions.trim().is_empty() {
-                out.push(format!("{at}: add instructions or at least one question."));
+            if it.questions.is_empty() && it.instructions.trim().is_empty() && it.files.is_empty() {
+                out.push(format!("{at}: add instructions, a question or a document."));
             }
             let mut ids = std::collections::HashSet::new();
             for (qi, q) in it.questions.iter().enumerate() {
@@ -227,6 +236,23 @@ fn published_meta(d: &Draft) -> CourseMeta {
     meta
 }
 
+/// A piece of work as it's published: its key and module filled in, unused options and answers dropped.
+fn prepare_item(it: &GenItem, n: usize) -> GenItem {
+    let mut it = it.clone();
+    it.key = format!("i{n}");
+    // fully auto-markable work is a quiz; anything with written answers is written work
+    it.module = if !it.questions.is_empty() && it.questions.iter().all(auto) { "quiz" } else { "written" }.into();
+    it.answer_key.retain(|k| it.questions.iter().any(|q| q.id == k.question_id));
+    for q in &mut it.questions {
+        if q.kind != "mcq" {
+            q.options.clear();
+        } else {
+            q.options = q.options.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+        }
+    }
+    it
+}
+
 /// The plan and unit contents a published draft becomes, with keys and modules filled in.
 fn compile(d: &Draft) -> (Plan, Vec<(String, UnitContent)>) {
     let last = d.units.len().saturating_sub(1);
@@ -246,27 +272,19 @@ fn compile(d: &Draft) -> (Plan, Vec<(String, UnitContent)>) {
             .items
             .iter()
             .enumerate()
-            .map(|(ii, it)| {
-                let mut it = it.clone();
-                it.key = format!("i{}", ii + 1);
-                // fully auto-markable work is a quiz; anything with written answers is written work
-                it.module = if !it.questions.is_empty() && it.questions.iter().all(auto) { "quiz" } else { "written" }.into();
-                it.answer_key.retain(|k| it.questions.iter().any(|q| q.id == k.question_id));
-                for q in &mut it.questions {
-                    if q.kind != "mcq" {
-                        q.options.clear();
-                    } else {
-                        q.options = q.options.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
-                    }
-                }
-                it
-            })
+            .map(|(ii, it)| prepare_item(it, ii + 1))
             .collect();
         let title = if u.lesson_title.trim().is_empty() { u.title.trim() } else { u.lesson_title.trim() };
         contents.push((
             key,
             UnitContent {
-                lesson: Lesson { title: title.to_string(), markdown: u.lesson.clone(), est_minutes: u.est_minutes, sources_used: vec![] },
+                lesson: Lesson {
+                    title: title.to_string(),
+                    markdown: u.lesson.clone(),
+                    est_minutes: u.est_minutes,
+                    sources_used: vec![],
+                    files: u.lesson_files.clone(),
+                },
                 items,
             },
         ));
@@ -374,6 +392,9 @@ struct UnitFile {
     objectives: Vec<String>,
     lesson_title: String,
     est_minutes: u32,
+    /// Paths relative to the unit's folder, e.g. "lesson files/Week 1.pdf".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    lesson_files: Vec<Attachment>,
 }
 
 fn clean(s: &str) -> String {
@@ -385,7 +406,9 @@ fn clean(s: &str) -> String {
 const README: &str = "This folder is a SelfSemester course, exported from the course builder.\r\n\r\n\
 course.json      the title, summary, grade weights and the list of units\r\n\
 NN <unit>/lesson.md   that unit's lesson (Markdown, $...$ for maths)\r\n\
-NN <unit>/work.json   that unit's graded work: questions, answer keys, rubrics, deadlines\r\n\r\n\
+NN <unit>/work.json   that unit's graded work: questions, answer keys, rubrics, deadlines\r\n\
+NN <unit>/lesson files/         documents attached to the lesson\r\n\
+NN <unit>/work files/NN <work>/ documents attached to each piece of work\r\n\r\n\
 Edit anything in a text editor, then use Import folder in the course builder. Importing makes a new draft;\r\n\
 this folder isn't changed.\r\n";
 
@@ -403,7 +426,13 @@ pub fn export(conn: &Connection, paths: &AppPaths, id: &str) -> Result<PathBuf, 
         let ud = root.join(&folder);
         std::fs::create_dir_all(&ud).map_err(|e| e.to_string())?;
         std::fs::write(ud.join("lesson.md"), &u.lesson).map_err(|e| e.to_string())?;
-        std::fs::write(ud.join("work.json"), serde_json::to_string_pretty(&u.items).unwrap()).map_err(|e| e.to_string())?;
+        let lesson_files = export_files(paths, id, &u.lesson_files, &ud, "lesson files")?;
+        let mut items = u.items.clone();
+        for (ii, it) in items.iter_mut().enumerate() {
+            let sub = format!("work files/{:02} {}", ii + 1, clean(&it.title));
+            it.files = export_files(paths, id, &it.files, &ud, &sub)?;
+        }
+        std::fs::write(ud.join("work.json"), serde_json::to_string_pretty(&items).unwrap()).map_err(|e| e.to_string())?;
         units.push(UnitFile {
             folder,
             title: u.title.clone(),
@@ -412,6 +441,7 @@ pub fn export(conn: &Connection, paths: &AppPaths, id: &str) -> Result<PathBuf, 
             objectives: u.objectives.clone(),
             lesson_title: u.lesson_title.clone(),
             est_minutes: u.est_minutes,
+            lesson_files,
         });
     }
     let file = CourseFile {
@@ -429,8 +459,34 @@ pub fn export(conn: &Connection, paths: &AppPaths, id: &str) -> Result<PathBuf, 
     Ok(root)
 }
 
+/// Copy a draft's attachments into `<unit folder>/<sub>`, returning them with paths relative to the unit folder.
+fn export_files(paths: &AppPaths, id: &str, files: &[Attachment], unit_dir: &Path, sub: &str) -> Result<Vec<Attachment>, String> {
+    if files.is_empty() {
+        return Ok(vec![]);
+    }
+    let dir = unit_dir.join(sub);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for f in files {
+        let src = attachments::path_of(paths, id, &f.file)?;
+        let name = Path::new(&f.file).file_name().and_then(|n| n.to_str()).unwrap_or("file").to_string();
+        std::fs::copy(&src, dir.join(&name)).map_err(|e| format!("Couldn't copy {}: {e}", f.name))?;
+        out.push(Attachment { name: f.name.clone(), file: format!("{sub}/{name}"), bytes: f.bytes });
+    }
+    Ok(out)
+}
+
+/// A path written in an exported folder, only if it stays inside that unit's folder.
+fn inside(unit_dir: &Path, rel: &str) -> Result<PathBuf, String> {
+    let p = Path::new(rel);
+    if p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return Err(format!("\"{rel}\" isn't inside the course folder."));
+    }
+    Ok(unit_dir.join(p))
+}
+
 /// Read a folder written by `export` (possibly edited since) into a new draft. Returns the new course's id.
-pub fn import(conn: &Connection, folder: &Path) -> Result<String, String> {
+pub fn import(conn: &Connection, paths: &AppPaths, folder: &Path) -> Result<String, String> {
     let text = std::fs::read_to_string(folder.join("course.json"))
         .map_err(|_| "That folder has no course.json. Pick a folder exported from the course builder.".to_string())?;
     let file: CourseFile = serde_json::from_str(&text).map_err(|e| format!("course.json couldn't be read: {e}"))?;
@@ -449,6 +505,17 @@ pub fn import(conn: &Connection, folder: &Path) -> Result<String, String> {
             Ok(t) => serde_json::from_str(&t).map_err(|e| format!("{}/work.json couldn't be read: {e}", u.folder))?,
             Err(_) => vec![],
         };
+        // Files are copied in once the draft exists; until then they point into the folder being imported.
+        let to_full = |files: &[Attachment]| -> Result<Vec<Attachment>, String> {
+            files
+                .iter()
+                .map(|f| Ok(Attachment { file: inside(&ud, &f.file)?.display().to_string(), ..f.clone() }))
+                .collect()
+        };
+        let mut items = items;
+        for it in &mut items {
+            it.files = to_full(&it.files)?;
+        }
         units.push(DraftUnit {
             title: u.title,
             week: u.week,
@@ -456,15 +523,152 @@ pub fn import(conn: &Connection, folder: &Path) -> Result<String, String> {
             objectives: u.objectives,
             lesson_title: u.lesson_title,
             lesson,
+            lesson_files: to_full(&u.lesson_files)?,
             est_minutes: u.est_minutes,
             items,
         });
     }
-    let draft = Draft { title: file.title, subject: file.subject, summary: file.summary, weights: file.weights, units, meta: file.meta };
+    let mut draft = Draft { title: file.title, subject: file.subject, summary: file.summary, weights: file.weights, units, meta: file.meta };
     if draft.title.trim().is_empty() {
         return Err("course.json has no title.".into());
     }
-    insert_draft(conn, &draft)
+    // Check every attached file before creating anything.
+    for u in &draft.units {
+        for f in u.lesson_files.iter().chain(u.items.iter().flat_map(|it| it.files.iter())) {
+            attachments::check(Path::new(&f.file)).map_err(|e| format!("In the folder being imported: {e}"))?;
+        }
+    }
+    let id = insert_draft(conn, &draft)?;
+    let copy = |files: &mut Vec<Attachment>| -> Result<(), String> {
+        for f in files.iter_mut() {
+            let (_, bytes) = attachments::check(Path::new(&f.file))?;
+            *f = attachments::copy_in(paths, &id, Path::new(&f.file), &f.name, bytes)?;
+        }
+        Ok(())
+    };
+    for u in &mut draft.units {
+        copy(&mut u.lesson_files)?;
+        for it in &mut u.items {
+            copy(&mut it.files)?;
+        }
+    }
+    save(conn, &id, &draft)?;
+    Ok(id)
+}
+
+// ---------- growing a published course ----------
+
+/// A published course written in the course builder that's still running.
+fn running_manual(conn: &Connection, id: &str) -> Result<(Plan, CourseMeta, NaiveDate), String> {
+    let (status, origin, plan, meta, starts): (String, String, Option<String>, Option<String>, Option<String>) = conn
+        .query_row("SELECT status, origin, plan_json, meta_json, starts_at FROM courses WHERE id=?1", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .optional()
+        .map_err(io)?
+        .ok_or("No such course.")?;
+    if origin != "manual" {
+        return Err("Only courses you wrote in the course builder can have weeks or work added.".into());
+    }
+    if status != "active" {
+        return Err("Weeks and work can only be added while the course is running.".into());
+    }
+    let plan: Plan = serde_json::from_str(&plan.ok_or("This course has no plan.")?).map_err(|e| e.to_string())?;
+    let meta: CourseMeta = meta.and_then(|m| serde_json::from_str(&m).ok()).unwrap_or_default();
+    let start = starts
+        .as_deref()
+        .and_then(schedule::parse_ts)
+        .map(|t| t.with_timezone(&chrono::Local).date_naive())
+        .ok_or("This course has no start date.")?;
+    Ok((plan, meta, start))
+}
+
+/// After adding to a course: grade shares, the plan, and the end date.
+fn finish_growth(conn: &Connection, id: &str, plan: &Plan, meta: &CourseMeta) -> Result<(), String> {
+    schedule::reweight(conn, id, &plan.weights).map_err(io)?;
+    let last_due: Option<String> =
+        conn.query_row("SELECT max(due_at) FROM items WHERE course_id=?1", [id], |r| r.get(0)).map_err(io)?;
+    conn.execute(
+        "UPDATE courses SET plan_json=?2, meta_json=?3, ends_at=coalesce(?4, ends_at), updated_at=?5 WHERE id=?1",
+        params![id, serde_json::to_string(plan).unwrap(), serde_json::to_string(meta).unwrap(), last_due, db::now_utc()],
+    )
+    .map_err(io)?;
+    Ok(())
+}
+
+/// Add a week (a lesson, and any graded work with it) to a published course you wrote. It's released at the start
+/// of its week, or now if that has already passed.
+pub fn add_week(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str, unit: DraftUnit) -> Result<String, String> {
+    let (mut plan, mut meta, start) = running_manual(conn, id)?;
+    let check = Draft { units: vec![unit.clone()], ..Draft::new("course") };
+    let issues = problems(&check);
+    if !issues.is_empty() {
+        return Err(format!("Fix these first: {}", issues.join(" ").replace("Unit 1 ", "This week ")));
+    }
+    let n: i64 = conn.query_row("SELECT count(*) FROM units WHERE course_id=?1", [id], |r| r.get(0)).map_err(io)?;
+    let n = n as usize;
+    let key = (n + 1..).map(|i| format!("u{i:02}")).find(|k| !plan.units.iter().any(|u| &u.key == k)).unwrap();
+    let (one, mut contents) = compile(&check);
+    let mut pu = one.units.into_iter().next().ok_or("Nothing to add.")?;
+    let (_, content) = contents.remove(0);
+    pu.key = key.clone();
+    pu.exam = if content.items.iter().any(|it| it.kind == "exam") { "midterm" } else { "none" }.into();
+    let dir = paths.ensure_course(id).map_err(|e| e.to_string())?;
+    let unit_id = format!("{id}:{key}");
+    let tx = conn.unchecked_transaction().map_err(io)?;
+    tx.execute(
+        "INSERT INTO units(id, course_id, seq, title, summary, unit_key, week, state) VALUES (?1,?2,?3,?4,?5,?6,?7,'validated')",
+        params![unit_id, id, n as i64, pu.title, pu.topics.join(", "), key, pu.week],
+    )
+    .map_err(io)?;
+    sealer.write_json(&dir.join("units").join(format!("{key}.json")), &content, true).map_err(|e| e.to_string())?;
+    schedule::schedule_unit(&tx, &dir, sealer, id, &unit_id, &key, pu.week, &content, start, Some(chrono::Utc::now()))
+        .map_err(|e| e.to_string())?;
+    let objectives: Vec<String> = unit.objectives.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+    meta.objectives.insert(key.clone(), objectives);
+    plan.pacing.total_weeks = plan.pacing.total_weeks.max(pu.week);
+    plan.units.push(pu);
+    finish_growth(&tx, id, &plan, &meta)?;
+    tx.commit().map_err(io)?;
+    Ok(key)
+}
+
+/// Add a piece of graded work to a week of a published course you wrote. It opens with its week, or now if the
+/// week has already started.
+pub fn add_work(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str, unit_key: &str, item: GenItem) -> Result<(), String> {
+    let (plan, meta, _) = running_manual(conn, id)?;
+    if !plan.units.iter().any(|u| u.key == unit_key) {
+        return Err("That week isn't in this course.".into());
+    }
+    let mut check = Draft::new("course");
+    check.units[0].lesson = "-".into();
+    check.units[0].items = vec![item.clone()];
+    let issues = problems(&check);
+    if !issues.is_empty() {
+        return Err(format!("Fix these first: {}", issues.join(" ").replace("Unit 1 (Week 1), work 1 ", "This work ")));
+    }
+    let dir = paths.ensure_course(id).map_err(|e| e.to_string())?;
+    let file = dir.join("units").join(format!("{unit_key}.json"));
+    let mut content: UnitContent = sealer.read_json(&file).map_err(|e| e.to_string())?;
+    let index = content.items.len() + 1;
+    let prepared = prepare_item(&item, index);
+    let (unit_id, release): (String, String) = conn
+        .query_row(
+            "SELECT u.id, i.release_at FROM units u JOIN items i ON i.unit_id = u.id AND i.kind = 'lesson'
+             WHERE u.course_id=?1 AND u.unit_key=?2",
+            params![id, unit_key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(io)?;
+    let release = schedule::parse_ts(&release).ok_or("The week has no release date.")?;
+    let tx = conn.unchecked_transaction().map_err(io)?;
+    schedule::schedule_item(&tx, &dir, sealer, id, &unit_id, unit_key, index, &prepared, release, Some(chrono::Utc::now()))
+        .map_err(|e| e.to_string())?;
+    content.items.push(prepared);
+    sealer.write_json(&file, &content, true).map_err(|e| e.to_string())?;
+    finish_growth(&tx, id, &plan, &meta)?;
+    tx.commit().map_err(io)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -509,6 +713,7 @@ mod tests {
                 rubric: vec![],
                 answer_key: vec![k("q1", "Bc4"), k("q2", "3")],
                 due_days: 3,
+                files: vec![],
             },
             GenItem {
                 key: String::new(),
@@ -520,6 +725,7 @@ mod tests {
                 rubric: vec![],
                 answer_key: vec![k("q1", "d3"), k("q2", "Slow build-up with c3 and d3.")],
                 due_days: 5,
+                files: vec![],
             },
         ];
         d
@@ -529,7 +735,7 @@ mod tests {
     fn new_draft_lists_what_is_missing() {
         let d = Draft::new("X");
         let p = problems(&d);
-        assert!(p.iter().any(|m| m.contains("lesson is empty")));
+        assert!(p.iter().any(|m| m.contains("write the lesson or attach a document")));
         let mut bad = sample();
         bad.units[0].items[0].answer_key[0].answer = "Nf3".into();
         bad.units[0].items[0].answer_key[1].answer = "three".into();
@@ -681,12 +887,114 @@ mod tests {
         assert_ne!(dir, again, "never writes over an earlier export");
 
         std::fs::write(dir.join("01 The Italian Game").join("lesson.md"), "Edited outside the app.").unwrap();
-        let copy = import(&conn, &dir).unwrap();
+        let copy = import(&conn, &paths, &dir).unwrap();
         let d = get(&conn, &copy).unwrap();
         assert_eq!(d.units[0].lesson, "Edited outside the app.");
         assert_eq!(d.units[0].items, sample().units[0].items);
         assert_eq!(d.meta, sample().meta, "course details survive the round trip");
         assert_eq!(d.units[0].objectives, ["Name the main line"]);
-        assert!(import(&conn, &paths.user_dir).is_err());
+        assert!(import(&conn, &paths, &paths.user_dir).is_err());
+    }
+
+    /// A file on disk to attach, standing in for something the learner picked.
+    fn doc(tmp: &tempfile::TempDir, name: &str, text: &str) -> PathBuf {
+        let p = tmp.path().join(name);
+        std::fs::write(&p, text).unwrap();
+        p
+    }
+
+    #[test]
+    fn a_document_can_be_the_lesson_and_the_work() {
+        let (tmp, paths, conn, sealer) = setup();
+        let id = create(&conn, "Watercolour basics").unwrap();
+        let mut d = get(&conn, &id).unwrap();
+        // the least a course needs: a title and a first lesson, here a PDF instead of typed text
+        d.units[0].lesson_files = attachments::add(&conn, &paths, &id, &[doc(&tmp, "Week 1 lesson.pdf", "%PDF-1.7")]).unwrap();
+        assert!(problems(&d).is_empty(), "{:?}", problems(&d));
+        d.units[0].items = vec![GenItem {
+            key: String::new(),
+            kind: "homework".into(),
+            title: "Colour wheel".into(),
+            module: String::new(),
+            instructions: String::new(),
+            questions: vec![],
+            rubric: vec![],
+            answer_key: vec![],
+            due_days: 4,
+            files: attachments::add(&conn, &paths, &id, &[doc(&tmp, "worksheet.pdf", "%PDF-1.7")]).unwrap(),
+        }];
+        assert!(problems(&d).is_empty(), "work with only a document is fine: {:?}", problems(&d));
+        save(&conn, &id, &d).unwrap();
+        publish(&conn, &paths, &sealer, &id, Utc::now().date_naive() - Duration::days(1), &LatePolicy::LockZero, Strictness::Structured, false).unwrap();
+        crate::course::schedule::tick(&conn, Utc::now()).unwrap();
+
+        let lesson = crate::course::item(&conn, &paths, &sealer, &format!("{id}:u01:lesson")).unwrap();
+        assert_eq!(lesson.files.len(), 1);
+        assert_eq!(lesson.files[0].name, "Week 1 lesson.pdf");
+        assert!(attachments::path_of(&paths, &id, &lesson.files[0].file).is_ok());
+        let work = crate::course::item(&conn, &paths, &sealer, &format!("{id}:u01:1")).unwrap();
+        assert_eq!(work.content.unwrap().files[0].name, "worksheet.pdf");
+    }
+
+    #[test]
+    fn exported_folders_keep_files_in_readable_places_and_import_them_back() {
+        let (tmp, paths, conn, _) = setup();
+        let id = create(&conn, "Chess openings").unwrap();
+        let mut d = sample();
+        d.units[0].lesson_files = attachments::add(&conn, &paths, &id, &[doc(&tmp, "Italian slides.pptx", "slides")]).unwrap();
+        d.units[0].items[1].files = attachments::add(&conn, &paths, &id, &[doc(&tmp, "Plans.pdf", "%PDF")]).unwrap();
+        save(&conn, &id, &d).unwrap();
+        let dir = export(&conn, &paths, &id).unwrap();
+        let unit = dir.join("01 The Italian Game");
+        assert!(unit.join("lesson files").join("Italian slides.pptx").is_file());
+        assert!(unit.join("work files").join("02 Plans").join("Plans.pdf").is_file());
+
+        let copy = import(&conn, &paths, &dir).unwrap();
+        let back = get(&conn, &copy).unwrap();
+        assert_eq!(back.units[0].lesson_files[0].name, "Italian slides.pptx");
+        let f = attachments::path_of(&paths, &copy, &back.units[0].lesson_files[0].file).unwrap();
+        assert_eq!(std::fs::read_to_string(f).unwrap(), "slides");
+        assert_eq!(back.units[0].items[1].files[0].name, "Plans.pdf");
+
+        // a folder can't point outside itself
+        let text = std::fs::read_to_string(dir.join("course.json")).unwrap().replace("lesson files/Italian slides.pptx", "../../app.db");
+        std::fs::write(dir.join("course.json"), text).unwrap();
+        assert!(import(&conn, &paths, &dir).is_err());
+    }
+
+    #[test]
+    fn weeks_and_work_can_be_added_to_a_running_course_without_touching_marks() {
+        let (tmp, paths, conn, sealer) = setup();
+        let id = create(&conn, "Chess openings").unwrap();
+        save(&conn, &id, &sample()).unwrap();
+        publish(&conn, &paths, &sealer, &id, Utc::now().date_naive() - Duration::days(1), &LatePolicy::LockZero, Strictness::Structured, true).unwrap();
+        crate::course::schedule::tick(&conn, Utc::now()).unwrap();
+        let quiz = format!("{id}:u01:1");
+        marking::submit(&conn, &paths, &sealer, &quiz, "", &json!({"q1": "Bc4", "q2": "3"}), &[], Utc::now()).unwrap();
+
+        // a new week whose lesson is a document, with a test
+        let mut week = DraftUnit::new(2);
+        week.title = "The Ruy Lopez".into();
+        week.lesson_files = attachments::add(&conn, &paths, &id, &[doc(&tmp, "Ruy Lopez.pdf", "%PDF")]).unwrap();
+        week.items = vec![GenItem { kind: "test".into(), title: "Ruy Lopez test".into(), instructions: "Annotate the game.".into(), ..sample().units[0].items[1].clone() }];
+        let key = add_week(&conn, &paths, &sealer, &id, week).unwrap();
+        assert_eq!(key, "u02");
+        // more work in week 1, released now because week 1 has started
+        let extra = GenItem { title: "Extra drill".into(), ..sample().units[0].items[0].clone() };
+        add_work(&conn, &paths, &sealer, &id, "u01", extra).unwrap();
+
+        let c = crate::course::view(&conn, &paths, &id).unwrap();
+        assert_eq!(c.units.len(), 2);
+        assert_eq!(c.units[0].items.len(), 4, "lesson, two original pieces of work and the new one");
+        let total: f64 = c.units.iter().flat_map(|u| &u.items).map(|i| i.weight).sum();
+        assert!((total - 1.0).abs() < 1e-9, "grade shares still add up to 100%: {total}");
+        let marked: f64 = conn.query_row("SELECT percent FROM marks WHERE item_id=?1", [&quiz], |r| r.get(0)).unwrap();
+        assert_eq!(marked, 100.0, "the existing mark is untouched");
+        let added = c.units[0].items.iter().find(|i| i.title == "Extra drill").unwrap();
+        assert!(schedule::parse_ts(&added.release_at).unwrap() <= Utc::now() + Duration::seconds(5));
+
+        // courses Claude writes, and drafts, can't be grown this way
+        let other = create(&conn, "Draft").unwrap();
+        assert!(add_week(&conn, &paths, &sealer, &other, DraftUnit::new(1)).is_err());
     }
 }

@@ -561,7 +561,7 @@ mod tests {
     fn quiz() -> (ItemPublic, ItemKey) {
         let q = |id: &str, kind: &str, opts: &[&str]| Question { id: id.into(), prompt: "?".into(), kind: kind.into(), options: opts.iter().map(|s| s.to_string()).collect(), points: 1.0 };
         (
-            ItemPublic { title: "Q".into(), kind: "quiz".into(), module: "quiz".into(), instructions: "".into(),
+            ItemPublic { title: "Q".into(), kind: "quiz".into(), module: "quiz".into(), instructions: "".into(), files: vec![],
                 questions: vec![q("a", "mcq", &["Paris", "Rome"]), q("b", "numeric", &[]), q("c", "numeric", &[])], rubric: vec![] },
             ItemKey { answer_key: vec![
                 KeyEntry { question_id: "a".into(), answer: "Paris".into(), explanation: "".into(), tolerance: 0.0 },

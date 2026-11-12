@@ -12,6 +12,7 @@
   import CourseBanner from "#lib/CourseBanner.svelte";
   import KindIcon from "#lib/KindIcon.svelte";
   import Materials from "#lib/Materials.svelte";
+  import ExtendCourse from "#lib/ExtendCourse.svelte";
 
   let { c }: { c: CourseView } = $props();
 
@@ -247,6 +248,9 @@
       </section>
     {/each}
     </div>
+    {#if c.origin === "manual" && c.status === "active"}
+      <ExtendCourse {c} />
+    {/if}
 
   <!-- ===== Syllabus ===== -->
   {:else if tab === "syllabus"}

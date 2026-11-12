@@ -5,6 +5,18 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "0.6.0",
+    date: "2026-11-12",
+    title: "Build from your own documents",
+    notes: [
+      "Attach PDFs, Word files, slides and more to any lesson or piece of work.",
+      "A document can be the whole lesson; text files can become the lesson text.",
+      "Start a course with just a name and a first lesson; the rest is optional.",
+      "Add weeks, homework, quizzes and exams to a course you wrote while it runs.",
+      "Exported folders keep files organised by week and by piece of work.",
+    ],
+  },
+  {
     version: "0.5.0",
     date: "2026-11-11",
     title: "A fresh look",
