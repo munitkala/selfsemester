@@ -3,7 +3,7 @@
 What changed in each version of SelfSemester, newest first. Changes that haven't been given a version number yet
 are listed under **Unreleased**.
 
-## Unreleased
+## 0.7.0 (2026-11-12)
 
 ### Tools you choose
 

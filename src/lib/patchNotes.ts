@@ -5,7 +5,7 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
-    version: "Next",
+    version: "0.7.0",
     date: "2026-11-12",
     title: "Lessons you can hear and try",
     notes: [
