@@ -51,35 +51,61 @@ The full list is in the [changelog](CHANGELOG.md).
 
 ## Screenshots
 
-### Your courses, laid out like school
+The app window at its normal size, with made-up demo courses (the course names and content are invented for the
+pictures). Click any picture for the full-size version.
 
-Shown with made-up demo courses written in the course builder (the names in them are invented).
+### Themes
+
+Pick light, dark or follow Windows, then a theme for each, and any accent colour.
+
+| | | |
+| --- | --- | --- |
+| ![Classic light theme](assets/screenshots/themes/classic-light.png) | ![Classic dark theme](assets/screenshots/themes/classic-dark.png) | ![Light theme with a pink accent](assets/screenshots/themes/pink.png) |
+| **Classic** | **Classic dark** | **Pink** (rose accent) |
+| ![Slate dark theme in blue](assets/screenshots/themes/blue.png) | ![Midnight dark theme](assets/screenshots/themes/midnight.png) | ![High contrast dark theme, white on black](assets/screenshots/themes/black.png) |
+| **Blue** (Slate) | **Midnight** | **Black** (high contrast) |
+| ![Paper sepia theme](assets/screenshots/themes/paper.png) | ![Forest dark theme](assets/screenshots/themes/forest.png) | ![Mint light theme](assets/screenshots/themes/mint.png) |
+| **Paper** (sepia) | **Forest** | **Mint** |
+
+### Every day
 
 | | |
 | --- | --- |
-| ![Courses dashboard with a card for each course](assets/screenshots/09-courses.png) | ![Course home page with a welcome, what's coming up and recent marks](assets/screenshots/05-course.png) |
-| **Courses:** a card for each course with its code, instructor, progress and mark | **Course home:** a welcome, how the course works, what's coming up and recent marks |
-| ![Modules tab with each week's objectives, lesson and work](assets/screenshots/10-modules.png) | ![Syllabus tab with the description, outcomes and schedule](assets/screenshots/11-syllabus.png) |
-| **Modules:** every week has the same shape: objectives, a lesson, then the work | **Syllabus:** description, learning outcomes, schedule, grading and policies |
-| ![Grades tab with the current mark and averages by category](assets/screenshots/12-grades.png) | ![Course builder with steps and a live preview of the course card](assets/screenshots/13-builder.png) |
-| **Grades:** current mark, how much is decided, averages by category | **Course builder:** write your own course in four steps, with a live preview |
-| ![Sandbox result with Try again and Review with Claude](assets/screenshots/14-sandbox.png) | |
-| **Sandbox:** try again as often as you like; the answer key stays hidden until you ask for it | |
+| ![Today page with a greeting, the daily goal ring, streak and what's due](assets/screenshots/04-today.png) | ![Insights page with streak, study time, notes and an activity calendar](assets/screenshots/15-insights.png) |
+| **Today:** your goal, streak and average, then what's due, new and marked | **Insights:** streaks, study time, an activity calendar, mark trends and what's coming up |
+| ![Courses page with a card for each course](assets/screenshots/09-courses.png) | ![Quick search box over the Today page](assets/screenshots/20-palette.png) |
+| **Courses:** a card for each course with its progress and mark | **Ctrl+K:** jump to any page or course, or switch theme |
 
-### Courses Claude writes
-
-Shown with a one-week "Git basics" course that Claude generated for a test run (example names in it are made up).
+### Inside a course
 
 | | |
 | --- | --- |
-| ![Readiness report and syllabus shown before you enrol](assets/screenshots/02-plan-review.png) | ![Building a course, with a progress bar and time left](assets/screenshots/03-building.png) |
+| ![Course home with a welcome, what's coming up and recent marks](assets/screenshots/05-course.png) | ![Modules tab with each week's objectives and work, finished items ticked](assets/screenshots/10-modules.png) |
+| **Course home:** a welcome, how the course works, what's next and recent marks | **Modules:** every week has the same shape: objectives, a lesson, then the work |
+| ![Syllabus tab with the description, outcomes and schedule](assets/screenshots/11-syllabus.png) | ![Grades tab with a grade ring and a bar for each category](assets/screenshots/12-grades.png) |
+| **Syllabus:** description, outcomes, schedule, grading and policies | **Grades:** your mark as a ring, how much is decided, and each category |
+| ![Lesson with headings, maths and a worked example table](assets/screenshots/06-lesson.png) | ![Assignment with multiple-choice options as cards](assets/screenshots/07-assignment.png) |
+| **Lesson:** reading time, a progress bar and a distraction-free reading mode | **Assignment:** deadline, points and weight, with clear answer cards |
+
+### Feedback
+
+| | |
+| --- | --- |
+| ![Result with a score ring, a bar per rubric line and a revise checklist](assets/screenshots/08-result.png) | ![Instant feedback with ticks and crosses, and a waiting-for-marks card](assets/screenshots/16-instant-feedback.png) |
+| **Result:** score ring, letter grade, a bar and comment for each rubric line, and what to revise | **Instant feedback:** multiple-choice and number answers checked the moment you submit |
+| ![Review thread as a conversation about a mark](assets/screenshots/17-review.png) | ![Sandbox result with Try again and Show the answer key](assets/screenshots/14-sandbox.png) |
+| **Review with Claude:** ask why marks were given or lost | **Sandbox:** try again as often as you like; the answer key stays hidden until you ask |
+
+### Planning, building and settings
+
+| | |
+| --- | --- |
+| ![Plan review with the syllabus and how well Claude can teach and mark it](assets/screenshots/02-plan-review.png) | ![Building a course, unit by unit](assets/screenshots/03-building.png) |
 | **Plan review:** syllabus, pacing and honest accuracy estimates before anything is built | **Building:** each unit is written, then checked by a second model |
-| ![Today view](assets/screenshots/04-today.png) | ![Lesson reader](assets/screenshots/06-lesson.png) |
-| **Today:** what's due, what's new, what's been marked | **Lesson:** full self-study lessons, with a distraction-free reading mode |
-| ![Assignment with points, deadline and weight](assets/screenshots/07-assignment.png) | ![Quiz marked automatically](assets/screenshots/08-quiz-result.png) |
-| **Assignment:** deadline, points and share of the final grade | **Quiz:** marked instantly, with the right answer explained for each miss |
-| ![First-launch terms](assets/screenshots/01-terms.png) | |
-| **First launch:** the terms every user accepts | |
+| ![Course builder with numbered steps and a live course card](assets/screenshots/13-builder.png) | ![Transcript with summary tiles and coloured grades](assets/screenshots/18-transcript.png) |
+| **Course builder:** write your own course in four steps | **Transcript:** completed courses, average and GPA |
+| ![Settings with mode, light and dark themes and accent colours](assets/screenshots/19-settings.png) | ![First-launch terms](assets/screenshots/01-terms.png) |
+| **Settings:** themes, text size, density, effects, study goals and more | **First launch:** the terms every user accepts |
 
 ## Requirements
 

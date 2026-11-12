@@ -249,7 +249,7 @@
 <style>
   .tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--space);
     margin-bottom: var(--space);
   }

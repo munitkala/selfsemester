@@ -80,6 +80,8 @@ upgrade, as with every new schema.
   ahead, and the course builder lists drafts as course cards.
 - While Claude plans or builds a course, the page shows that it's working and how many units are done.
 - Fixed: some numbered badges in the course builder used white text on a light accent in dark themes.
+- The Insights summary tiles stay on one row at the app's normal window size.
+- New screenshots in the README for every screen and nine of the themes.
 
 ### What's new
 
