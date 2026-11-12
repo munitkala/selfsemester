@@ -54,16 +54,12 @@
     height: 100%;
     background: var(--accent);
     transition: width 1s linear;
+    border-radius: 4px;
   }
   .track span.paused {
     background: var(--warn);
   }
   p {
     margin: 0.3rem 0 0;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .track span {
-      transition: none;
-    }
   }
 </style>

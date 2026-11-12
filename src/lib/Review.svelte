@@ -38,12 +38,15 @@
     <ol class="thread">
       {#each thread.messages as m (m.id)}
         <li class={m.role}>
+          {#if m.role !== "note"}<span class="avatar" aria-hidden="true">{m.role === "learner" ? "Y" : "C"}</span>{/if}
+          <div class="bubble">
           <span class="who small muted">{m.role === "learner" ? "You" : m.role === "claude" ? "Claude" : "Note"} · {when(m.created_at)}</span>
           {#if m.role === "claude"}
             <div class="prose">{@html render(m.text)}</div>
           {:else}
             <p>{m.text}</p>
           {/if}
+          </div>
         </li>
       {/each}
     </ol>
@@ -78,16 +81,55 @@
     gap: 0.6rem;
   }
   .thread li {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+  }
+  .thread li.learner {
+    flex-direction: row-reverse;
+    margin-left: 2.5rem;
+  }
+  .thread li.claude {
+    margin-right: 2.5rem;
+  }
+  .avatar {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+    background: var(--raised);
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .learner .avatar {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+  .bubble {
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 0.5rem 0.8rem;
+    background: var(--raised);
   }
-  .thread li.learner {
+  .learner .bubble {
     background: var(--accent-soft);
-    margin-left: 2rem;
+    border-color: var(--accent-line);
+    border-top-right-radius: 4px;
   }
-  .thread li.note {
+  .claude .bubble {
+    border-top-left-radius: 4px;
+  }
+  .thread li.note .bubble {
+    width: 100%;
     color: var(--warn);
+    background: transparent;
+    border-style: dashed;
   }
   .thread p {
     margin: 0.2rem 0 0;

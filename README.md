@@ -45,6 +45,7 @@ Coming in the next release:
 - **Insights**: streaks, study time against a daily goal, an activity calendar, marks over time and what's due
   in the coming weeks.
 - **Ctrl+K** to jump anywhere.
+- **Clearer feedback**: results with a score ring, a bar for each rubric line and a list of what to revise.
 
 The full list is in the [changelog](CHANGELOG.md).
 

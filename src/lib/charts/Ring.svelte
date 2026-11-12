@@ -2,7 +2,14 @@
   import type { Snippet } from "svelte";
 
   // A progress ring. `value` is 0..1; it fills on first show unless motion is reduced.
-  let { value, size = 72, stroke = 8, label, children }: { value: number; size?: number; stroke?: number; label: string; children?: Snippet } = $props();
+  let {
+    value,
+    size = 72,
+    stroke = 8,
+    label,
+    tone = "accent",
+    children,
+  }: { value: number; size?: number; stroke?: number; label: string; tone?: "accent" | "good" | "warn" | "bad"; children?: Snippet } = $props();
 
   const r = $derived((size - stroke) / 2);
   const c = $derived(2 * Math.PI * r);
@@ -16,8 +23,8 @@
       cx={size / 2}
       cy={size / 2}
       {r}
-      class="fill"
-      class:done={value >= 1}
+      class="fill {tone}"
+      class:done={tone === "accent" && value >= 1}
       stroke-width={stroke}
       stroke-dasharray={c}
       stroke-dashoffset={c * (1 - shown)}
@@ -50,8 +57,15 @@
   :global([data-motion="full"]) .fill {
     animation: fill-in 900ms var(--ease) both;
   }
-  .fill.done {
+  .fill.done,
+  .fill.good {
     stroke: var(--good);
+  }
+  .fill.warn {
+    stroke: var(--warn);
+  }
+  .fill.bad {
+    stroke: var(--bad);
   }
   @keyframes fill-in {
     from {

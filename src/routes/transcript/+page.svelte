@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, live, type Transcript } from "#lib/api.ts";
-  import { day, pct } from "#lib/format.ts";
+  import { band, day, pct } from "#lib/format.ts";
+  import Icon from "#lib/Icon.svelte";
 
   let t = $state<Transcript | null>(null);
   let error = $state<string | null>(null);
@@ -17,7 +18,7 @@
   );
 </script>
 
-<div class="spread">
+<div class="spread page-enter">
   <h1>Transcript</h1>
   {#if t?.entries.length}<button class="ghost" onclick={() => window.print()}>Print or save as PDF</button>{/if}
 </div>
@@ -29,6 +30,11 @@
   {#if t.entries.length === 0}
     <p class="card muted">No completed courses yet. A course is added here when its last graded item is marked.</p>
   {:else}
+    <section class="tiles">
+      <div class="tile"><span class="icon"><Icon name="transcript" /></span><div><strong>{t.entries.length}</strong><span class="small muted">{t.entries.length === 1 ? "course" : "courses"} completed</span></div></div>
+      <div class="tile"><span class="icon"><Icon name="target" /></span><div><strong>{pct(t.average)}</strong><span class="small muted">cumulative average</span></div></div>
+      <div class="tile"><span class="icon"><Icon name="sparkle" /></span><div><strong>{t.gpa?.toFixed(2) ?? "-"}</strong><span class="small muted">GPA on a 4.0 scale</span></div></div>
+    </section>
     <section class="card table-wrap">
       <table>
         <thead>
@@ -41,7 +47,7 @@
               <td>{day(e.started_on)}</td>
               <td>{day(e.finished_on)}</td>
               <td>{pct(e.final_percent)}</td>
-              <td><strong>{e.letter}</strong></td>
+              <td><span class="grade {band(e.final_percent)}">{e.letter}</span></td>
               <td>{e.gpa.toFixed(1)}</td>
             </tr>
           {/each}
@@ -54,3 +60,60 @@
     <p class="small muted">Marks are given by Claude against each course's rubrics; they are not an accredited qualification.</p>
   {/if}
 {/if}
+
+<style>
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: var(--space);
+    margin-bottom: var(--space);
+  }
+  .tile {
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+    box-shadow: var(--shadow);
+  }
+  .tile strong {
+    display: block;
+    font-size: 1.35rem;
+    line-height: 1.2;
+  }
+  .icon {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    flex: none;
+  }
+  .grade {
+    display: inline-block;
+    min-width: 2.4rem;
+    text-align: center;
+    font-weight: 700;
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+  }
+  .grade.good {
+    color: var(--good);
+  }
+  .grade.warn {
+    color: var(--warn);
+  }
+  .grade.bad {
+    color: var(--bad);
+  }
+  @media print {
+    .tiles {
+      display: none;
+    }
+  }
+</style>

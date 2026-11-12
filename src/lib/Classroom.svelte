@@ -5,7 +5,9 @@
   import { goto } from "$app/navigation";
   import { api, type CourseView, type ItemRow } from "#lib/api.ts";
   import { render } from "#lib/markdown.ts";
-  import { day, kindLabel, letter, pct, when } from "#lib/format.ts";
+  import { band, day, kindLabel, letter, pct, when } from "#lib/format.ts";
+  import Icon from "#lib/Icon.svelte";
+  import Ring from "#lib/charts/Ring.svelte";
   import { agenda, colorVars, markedBy, nextUp, settled, statusOf } from "#lib/course.ts";
   import CourseBanner from "#lib/CourseBanner.svelte";
   import KindIcon from "#lib/KindIcon.svelte";
@@ -14,11 +16,11 @@
   let { c }: { c: CourseView } = $props();
 
   const TABS = [
-    { id: "home", label: "Home" },
-    { id: "modules", label: "Modules" },
-    { id: "syllabus", label: "Syllabus" },
-    { id: "grades", label: "Grades" },
-    { id: "materials", label: "Materials" },
+    { id: "home", label: "Home", icon: "today" },
+    { id: "modules", label: "Modules", icon: "courses" },
+    { id: "syllabus", label: "Syllabus", icon: "book" },
+    { id: "grades", label: "Grades", icon: "target" },
+    { id: "materials", label: "Materials", icon: "builder" },
   ] as const;
   type Tab = (typeof TABS)[number]["id"];
   const tab = $derived((TABS.find((t) => t.id === page.url.searchParams.get("tab"))?.id ?? "home") as Tab);
@@ -40,6 +42,7 @@
   );
   const weeks = $derived(c.plan?.pacing.total_weeks ?? Math.max(1, ...c.units.map((u) => u.week)));
   const doneAll = $derived(items.filter(settled).length);
+  const mark = $derived(c.status === "completed" ? c.final_percent : c.grades.current);
 
   /** Each kind's share of the final grade and the average so far, from the items themselves. */
   const categories = $derived.by(() => {
@@ -85,7 +88,7 @@
 
   <nav class="tabs" aria-label="Course sections">
     {#each TABS as t}
-      <button class:active={tab === t.id} aria-current={tab === t.id ? "page" : undefined} onclick={() => show(t.id)}>{t.label}</button>
+      <button class:active={tab === t.id} aria-current={tab === t.id ? "page" : undefined} onclick={() => show(t.id)}><Icon name={t.icon} size={16} /> {t.label}</button>
     {/each}
     <span class="chips">
       {#if c.strictness === "sandbox"}<span class="chip">Sandbox</span>{:else}<span class="chip">Structured</span>{/if}
@@ -146,9 +149,14 @@
         </section>
 
         <section class="card">
-          <div class="spread"><h2>Progress</h2><span class="small muted">{doneAll} of {items.length} done</span></div>
-          <div class="bar big" role="progressbar" aria-valuemin="0" aria-valuemax={items.length} aria-valuenow={doneAll} aria-label="Course progress">
-            <span style="width: {items.length ? (100 * doneAll) / items.length : 0}%"></span>
+          <div class="progress-head">
+            <Ring value={items.length ? doneAll / items.length : 0} size={70} stroke={7} label="Course progress: {doneAll} of {items.length} done">
+              <strong class="small">{items.length ? Math.round((100 * doneAll) / items.length) : 0}%</strong>
+            </Ring>
+            <div>
+              <h2>Progress</h2>
+              <span class="small muted">{doneAll} of {items.length} done</span>
+            </div>
           </div>
           <ul class="unit-progress">
             {#each c.units as u (u.key)}
@@ -222,7 +230,7 @@
           {#each u.items as it (it.id)}
             {@const s = statusOf(it)}
             <li class:locked={it.state === "locked"}>
-              <span class="icon-box small-box"><KindIcon kind={it.kind} /></span>
+              <span class="icon-box small-box" class:finished={settled(it)}>{#if settled(it)}<Icon name="check" />{:else}<KindIcon kind={it.kind} />{/if}</span>
               <span class="mi-text">
                 {#if it.state === "locked"}
                   <span class="mi-title">{it.title}</span>
@@ -305,12 +313,14 @@
   {:else if tab === "grades"}
     <section class="card">
       <div class="grade-summary">
-        <div>
-          <span class="small muted">{c.status === "completed" ? "Final mark" : "Current mark"}</span>
-          <strong class="big-grade">{pct(c.status === "completed" ? c.final_percent : c.grades.current)}</strong>
-          {#if (c.status === "completed" ? c.final_percent : c.grades.current) != null}
-            <span class="letter">{letter((c.status === "completed" ? c.final_percent : c.grades.current)!)}</span>
-          {/if}
+        <div class="grade-ring">
+          <Ring value={(mark ?? 0) / 100} size={110} stroke={10} tone={mark == null ? "accent" : band(mark)} label="{c.status === 'completed' ? 'Final' : 'Current'} mark: {pct(mark)}">
+            <div><strong class="big-grade">{mark == null ? "–" : Math.round(mark)}</strong>{#if mark != null}<span class="small">%</span>{/if}</div>
+          </Ring>
+          <div>
+            <span class="small muted">{c.status === "completed" ? "Final mark" : "Current mark"}</span>
+            {#if mark != null}<strong class="letter">{letter(mark)}</strong>{:else}<span class="muted">No marks yet</span>{/if}
+          </div>
         </div>
         <div class="decided">
           <span class="small muted">{Math.round(c.grades.decided * 100)}% of the final grade is decided</span>
@@ -322,16 +332,16 @@
 
     <section class="card">
       <h2>By category</h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Category</th><th>Weight</th><th>Marked</th><th>Average</th></tr></thead>
-          <tbody>
-            {#each categories as cat}
-              <tr><td>{kindLabel[cat.kind]}</td><td>{Math.round(cat.weight * 100)}%</td><td>{cat.markedCount} of {cat.count}</td><td>{pct(cat.avg)}</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <ul class="cats">
+        {#each categories as cat}
+          <li>
+            <span class="cat-name"><KindIcon kind={cat.kind} size={15} /> {kindLabel[cat.kind]}</span>
+            <span class="small muted">{Math.round(cat.weight * 100)}% of grade · {cat.markedCount} of {cat.count} marked</span>
+            <span class="cat-bar {band(cat.avg)}" aria-hidden="true"><span style="width: {cat.avg ?? 0}%"></span></span>
+            <strong class="nowrap {cat.avg == null ? 'muted' : band(cat.avg)}">{pct(cat.avg, 0)}</strong>
+          </li>
+        {/each}
+      </ul>
     </section>
 
     <section class="card">
@@ -414,16 +424,22 @@
     margin-bottom: 1rem;
   }
   .tabs button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     background: transparent;
     border: 0;
     border-bottom: 3px solid transparent;
-    border-radius: 0;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     color: var(--muted);
     padding: 0.55rem 0.8rem;
     font-weight: 600;
+    transition: color var(--fast), background-color var(--fast);
   }
   .tabs button:hover {
     color: var(--text);
+    background: var(--accent-soft);
+    filter: none;
   }
   .tabs button.active {
     color: var(--text);
@@ -511,7 +527,7 @@
     justify-content: center;
     width: 2.6rem;
     height: 2.6rem;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     background: var(--course-tint);
     color: var(--course);
     flex: none;
@@ -519,7 +535,7 @@
   .small-box {
     width: 2.1rem;
     height: 2.1rem;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
   }
   .status {
     font-size: 0.8rem;
@@ -640,14 +656,14 @@
     font-weight: 700;
     letter-spacing: 0.03em;
     padding: 0.2rem 0.6rem;
-    border-radius: 6px;
+    border-radius: calc(var(--radius-sm) - 2px);
     text-transform: uppercase;
   }
   .objectives {
     margin: 0.6rem 0 0.2rem;
     padding: 0.6rem 0.8rem;
     background: var(--course-tint);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     color: var(--text);
   }
   .objectives ul {
@@ -732,17 +748,83 @@
     flex-wrap: wrap;
     align-items: center;
   }
-  .grade-summary > div:first-child {
+  .grade-ring {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  .grade-ring > div:last-child {
     display: flex;
     flex-direction: column;
   }
   .big-grade {
-    font-size: 2.6rem;
-    line-height: 1.1;
-    color: var(--course);
+    font-size: 1.9rem;
+    line-height: 1;
   }
   .letter {
     font-weight: 700;
+    font-size: 1.6rem;
+  }
+  .progress-head {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    margin-bottom: 0.6rem;
+  }
+  .progress-head h2 {
+    margin: 0;
+  }
+  .icon-box.finished {
+    color: var(--good);
+    background: color-mix(in oklch, var(--good) 14%, var(--panel));
+  }
+  .cats {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.7rem;
+  }
+  .cats li {
+    display: grid;
+    grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 1.6fr) auto;
+    grid-template-areas: "name bar score" "meta bar score";
+    column-gap: 0.9rem;
+    align-items: center;
+  }
+  .cat-name {
+    grid-area: name;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+  }
+  .cats .small {
+    grid-area: meta;
+  }
+  .cat-bar {
+    grid-area: bar;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .cat-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--good);
+  }
+  .cat-bar.warn span {
+    background: var(--warn);
+  }
+  .cat-bar.bad span {
+    background: var(--bad);
+  }
+  .cats strong {
+    grid-area: score;
+    min-width: 3rem;
+    text-align: right;
   }
   .decided {
     flex: 1;

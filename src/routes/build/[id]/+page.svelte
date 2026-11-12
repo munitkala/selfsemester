@@ -8,6 +8,7 @@
   import StrictnessChoice from "#lib/StrictnessChoice.svelte";
   import CourseBanner from "#lib/CourseBanner.svelte";
   import KindIcon from "#lib/KindIcon.svelte";
+  import Icon from "#lib/Icon.svelte";
   import ListEditor from "#lib/ListEditor.svelte";
 
   const id = $derived(page.params.id ?? "");
@@ -207,7 +208,7 @@
       <ol>
         {#each STEPS as s, i}
           <li class:done={stepDone[s.id]}>
-            <a href="#{s.id}"><span class="dot" aria-hidden="true">{stepDone[s.id] ? "✓" : i + 1}</span>{s.label}</a>
+            <a href="#{s.id}"><span class="dot" aria-hidden="true">{#if stepDone[s.id]}<Icon name="check" size={13} />{:else}{i + 1}{/if}</span>{s.label}</a>
           </li>
         {/each}
       </ol>
@@ -607,7 +608,7 @@
     gap: 0.6rem;
     align-items: center;
     padding: 0.45rem 0.5rem;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     text-decoration: none;
     color: var(--text);
   }
@@ -630,7 +631,7 @@
   .done .dot {
     background: var(--good);
     border-color: var(--good);
-    color: #fff;
+    color: var(--panel);
   }
   .mini-preview {
     border: 1px solid var(--line);
@@ -658,7 +659,7 @@
     justify-content: center;
     border-radius: 50%;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 0.95rem;
     flex: none;
   }
@@ -783,12 +784,12 @@
   }
   .wk-badge {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.03em;
     padding: 0.2rem 0.55rem;
-    border-radius: 6px;
+    border-radius: calc(var(--radius-sm) - 2px);
     text-transform: uppercase;
   }
   .sub {
@@ -889,7 +890,7 @@
   }
   .preview {
     border: 1px solid var(--line);
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     padding: 0.6rem 0.8rem;
     min-height: 6rem;
   }

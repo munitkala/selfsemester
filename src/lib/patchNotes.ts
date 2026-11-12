@@ -15,6 +15,8 @@ export const patchNotes: PatchNote[] = [
       "New Insights page: streaks, study time, activity calendar and mark trends.",
       "Study time counts on lesson and work pages, with a daily goal on Today.",
       "Ctrl+K to jump to any page or course.",
+      "Clearer results: a score ring, a bar per rubric line and a revise checklist.",
+      "Course pages, lessons, reviews and the transcript in the new style.",
     ],
   },
   {

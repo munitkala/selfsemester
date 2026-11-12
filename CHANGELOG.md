@@ -60,6 +60,27 @@ upgrade, as with every new schema.
   can be turned off under Shortcuts.
 - The sidebar has icons and an Insights link, and shows what Claude is doing as a small status chip.
 
+### Course pages and feedback
+
+**Why:** marks and feedback are the part of a course you look at most, and they were a plain table.
+
+- A marked item opens with a score ring, the letter grade and a few words about it, then one row per rubric line
+  with a bar for the points and Claude's comment underneath. **To revise** is a short checklist, and a late
+  penalty shows as its own tag.
+- Instant feedback marks each answer with a tick or a cross and shows the running score.
+- While work waits to be marked, a clear card says it's submitted and that the time is already recorded.
+- Multiple-choice answers are larger cards that show which one you picked, and submitting asks for a clear
+  confirmation.
+- Lessons show an estimated reading time and a thin progress bar at the top as you read.
+- The answer key labels questions "Question 1", "Question 2" like the rest of the page.
+- The review thread is a conversation, with your messages on one side and Claude's on the other.
+- The classroom tabs have icons, Home shows progress as a ring, and Grades shows your mark as a ring with a bar
+  per category. Finished items in Modules get a tick.
+- The transcript has summary tiles (courses, average, GPA) and coloured grades. New course shows the four steps
+  ahead, and the course builder lists drafts as course cards.
+- While Claude plans or builds a course, the page shows that it's working and how many units are done.
+- Fixed: some numbered badges in the course builder used white text on a light accent in dark themes.
+
 ### What's new
 
 - Settings opens with short patch notes for each version, with a link to this changelog for the details.

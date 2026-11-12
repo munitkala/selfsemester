@@ -134,7 +134,7 @@
 
   <!-- 1. Intake -->
   {:else if c.status === "intake"}
-    <section class="card"><p>Claude is reading your request and writing a few questions about your goals and level.</p></section>
+    <section class="card working"><span class="spinner" aria-hidden="true"></span><p>Claude is reading your request and writing a few questions about your goals and level.</p></section>
   {:else if c.status === "answering" && c.questions}
     <form class="card" onsubmit={submitAnswers}>
       <h2>A few questions first</h2>
@@ -160,7 +160,7 @@
 
   <!-- 2. Scope -->
   {:else if c.status === "scoping"}
-    <section class="card"><p>Claude is planning the syllabus, pacing and assessments, and estimating how well it can teach and mark this course.</p></section>
+    <section class="card working"><span class="spinner" aria-hidden="true"></span><p>Claude is planning the syllabus, pacing and assessments, and estimating how well it can teach and mark this course.</p></section>
 
   <!-- 3. Review: readiness report -->
   {:else if c.status === "review" && plan}
@@ -269,6 +269,9 @@
   {:else if c.status === "compiling"}
     <section class="card">
       <h2>Building your course</h2>
+      <div class="build-meter" role="progressbar" aria-valuemin="0" aria-valuemax={c.units.length} aria-valuenow={unitsDone} aria-label="Units written and checked">
+        <span style="width: {c.units.length ? (100 * unitsDone) / c.units.length : 0}%"></span>
+      </div>
       <p class="muted">{c.sources.length ? `${c.sources.length} sources found. ` : "Finding free sources first. "}{unitsDone} of {c.units.length} units written and checked.</p>
       <ul class="units">
         {#each c.units as u}
@@ -325,6 +328,28 @@
 {/if}
 
 <style>
+  .working {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .working p {
+    margin: 0;
+  }
+  .build-meter {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--line);
+    overflow: hidden;
+    margin: 0.4rem 0 0.6rem;
+  }
+  .build-meter span {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+    transition: width var(--slow) var(--ease);
+  }
   .grade {
     text-align: right;
     display: flex;

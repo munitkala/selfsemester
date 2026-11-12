@@ -30,6 +30,17 @@ export function letter(p: number): string {
   return bands.find(([m]) => p >= m)?.[1] ?? "F";
 }
 
+/** Colour band for a percentage: good from 70, warn from 50, bad below. */
+export function band(p: number | null | undefined): "good" | "warn" | "bad" {
+  if (p == null) return "warn";
+  return p >= 70 ? "good" : p >= 50 ? "warn" : "bad";
+}
+
+/** A few plain words to go with a mark. */
+export function headline(p: number): string {
+  return p >= 85 ? "Excellent work" : p >= 70 ? "Good work" : p >= 50 ? "A pass, with room to improve" : "Worth another look";
+}
+
 export const kindLabel: Record<string, string> = {
   lesson: "Lesson",
   homework: "Homework",
