@@ -16,6 +16,8 @@ pub use cli::CliRunner;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
+    /// The most capable model. Only used when the learner picks it for a build.
+    Fable,
     /// Scope check, syllabus, exams, final-exam marking.
     Opus,
     /// Intake, source discovery, lessons, most marking.
@@ -27,9 +29,33 @@ pub enum Tier {
 impl Tier {
     pub fn alias(self) -> &'static str {
         match self {
+            Tier::Fable => "fable",
             Tier::Opus => "opus",
             Tier::Sonnet => "sonnet",
             Tier::Haiku => "haiku",
+        }
+    }
+}
+
+/// How hard the model thinks on a call (passed to `--effort`). Higher uses more of the plan's usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+impl Effort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Effort::Low => "low",
+            Effort::Medium => "medium",
+            Effort::High => "high",
+            Effort::Xhigh => "xhigh",
+            Effort::Max => "max",
         }
     }
 }
@@ -50,6 +76,9 @@ pub struct StageRequest {
     /// Extra folders Claude Code may read (e.g. a submission's uploads). Passed as `--add-dir`.
     #[serde(default)]
     pub add_dirs: Vec<String>,
+    /// None leaves the effort to Claude Code's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<Effort>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

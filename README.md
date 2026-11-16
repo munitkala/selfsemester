@@ -78,6 +78,10 @@ Studio C++ build tools (see [Install](#install)).
   app pauses and tries again at the reset time Claude Code reports (or at least every hour). If your limit has
   reset sooner, press **Resume now**. A progress bar shows roughly how long building or marking has left, based on
   how long each step has taken before on your computer.
+- **Build levels.** When you approve a course you choose how it's built. **Quick** uses lighter models at low
+  effort with no rewrites, **Standard** is the default, and **Thorough** and **Maximum** use stronger models, think
+  harder, rewrite units that fail their check and look for more sources. **Custom** lets you set each part. The
+  review step shows the number of calls, rough usage compared with Standard and the expected build time.
 - **Keep the app open while a course is building.** Building, releases, deadline checks and reminders only run while
   the window is open. Anything that fell due while it was closed is settled the next time you open it.
 - **AI teaching and marking can be wrong.** Before you enrol, each course shows a readiness report with honest

@@ -3,6 +3,28 @@
 What changed in each version of SelfSemester, newest first. Changes that haven't been given a version number yet
 are listed under **Unreleased**.
 
+## Unreleased
+
+### Choose how hard Claude works on a course
+
+**Why:** a short refresher course doesn't need the same care as a semester of exams, and plans differ in how much
+usage they have. Until now every course was built the same way.
+
+- The review step has a new **Build level** choice, from Quick to Maximum:
+  - **Quick**: Sonnet writes everything at low effort, Haiku checks it, no rewrites and a short reading list.
+  - **Standard**: the way courses were built before. Sonnet writes lessons, Opus writes units with a test or exam,
+    Haiku checks, and a unit is rewritten once if its check finds a real mistake.
+  - **Thorough**: Opus writes at high effort, Sonnet checks, up to two rewrites and a longer reading list.
+  - **Maximum**: Fable writes at the highest effort, Opus checks, up to three rewrites and the longest reading list.
+    If Fable isn't available on your plan, Claude Code uses Opus for those steps instead.
+  - **Custom**: pick the model for lessons, for units with tests and exams, and for checking, plus the effort
+    level, up to five rewrites and up to 30 sources.
+- Under the choice, the app shows how many Claude calls the build makes, roughly how its usage compares with a
+  Standard build and how long it should take. Usage is compared using each model's published price, since plans
+  don't publish their real limits.
+- The level you picked last is offered first next time. Marking isn't affected.
+- Database schema v7 stores the level with each course. Courses built before keep the Standard settings.
+
 ## 0.7.0 (2026-11-12)
 
 ### Tools you choose

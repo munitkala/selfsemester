@@ -3,6 +3,7 @@
 //!   intake -> answering -> scoping -> review -> compiling -> active -> completed
 //! A failed stage leaves the status alone and sets `courses.error`; `retry` re-queues it.
 
+use super::build::BuildSettings;
 use super::materials;
 use super::prompts;
 use super::schedule;
@@ -110,8 +111,11 @@ pub fn approve(
     late_policy: &schedule::LatePolicy,
     strictness: schedule::Strictness,
     on_transcript: bool,
+    build: &BuildSettings,
 ) -> Result<(), String> {
     let plan = plan_of(conn, id)?;
+    let build = build.clone().clean();
+    super::build::save_for_course(conn, id, &build)?;
     conn.execute(
         "UPDATE courses SET title=?2, mode=?3, late_policy=?4, on_transcript=?5, readiness_json=?6, starts_at=?7, strictness=?8
          WHERE id=?1",
@@ -136,7 +140,9 @@ pub fn approve(
         .map_err(io)?;
     }
     set_status(conn, id, "compiling")?;
-    jobs::enqueue_with(conn, Some(id), "sources", None, jobs::PRIORITY_COMPILE, &prompts::sources(&plan)).map_err(io)?;
+    let mut req = prompts::sources_up_to(&plan, build.sources);
+    build.for_sources(&mut req);
+    jobs::enqueue_with(conn, Some(id), "sources", None, jobs::PRIORITY_COMPILE, &req).map_err(io)?;
     Ok(())
 }
 
@@ -201,8 +207,10 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             let plan = plan_of(conn, &id)?;
             let srcs = sources_of(conn, &id)?;
             let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
+            let build = super::build::of_course(conn, &id)?;
             for u in &plan.units {
                 let mut req = prompts::unit(&plan, &srcs, &u.key, None, &tool_guide);
+                build.for_unit(&mut req, u.exam != "none");
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
             }
@@ -215,17 +223,21 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             sealer.write_json(&dir.join("units").join(format!("{key}.json")), &content, true).map_err(|e| e.to_string())?;
             conn.execute("UPDATE units SET state='generated' WHERE course_id=?1 AND unit_key=?2", params![id, key]).map_err(io)?;
             let plan = plan_of(conn, &id)?;
-            jobs::enqueue_with(conn, Some(&id), "validate", Some(&key), jobs::PRIORITY_COMPILE, &prompts::validate(&plan, &key, &content)).map_err(io)?;
+            let mut req = prompts::validate(&plan, &key, &content);
+            super::build::of_course(conn, &id)?.for_check(&mut req);
+            jobs::enqueue_with(conn, Some(&id), "validate", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
         }
         "validate" => {
             let key = unit_key.ok_or("validate job without unit")?;
             let v: Validation = serde_json::from_value(value).map_err(|e| e.to_string())?;
             let major: Vec<&Issue> = v.issues.iter().filter(|i| i.severity == "major").collect();
-            if !major.is_empty() && unit_attempts(conn, &id, &key)? < 2 {
+            let build = super::build::of_course(conn, &id)?;
+            if !major.is_empty() && unit_attempts(conn, &id, &key)? < 1 + build.rewrites as i64 {
                 let plan = plan_of(conn, &id)?;
                 let srcs = sources_of(conn, &id)?;
                 let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
                 let mut req = prompts::unit(&plan, &srcs, &key, Some(&fb), &crate::tools::lesson_guide(&crate::tools::installed(paths)));
+                build.for_unit(&mut req, plan.units.iter().any(|u| u.key == key && u.exam != "none"));
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
                 conn.execute("UPDATE units SET state='pending' WHERE course_id=?1 AND unit_key=?2", params![id, key]).map_err(io)?;
@@ -357,6 +369,41 @@ mod tests {
     }
 
     #[test]
+    fn build_level_sets_models_effort_and_rewrites() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
+        paths.ensure().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = create(&conn, "Quantum mechanics 1", "").unwrap();
+        answer(&conn, &paths, &sealer, json!({"questions":[]}));
+        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
+        let quick = crate::course::build::preset(crate::course::build::Level::Quick);
+        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, &quick).unwrap();
+        assert_eq!(crate::course::build::of_course(&conn, &id).unwrap(), quick);
+        assert_eq!(crate::course::build::last_used(&conn), quick);
+        let queued = |kind: &str| -> Vec<(String, String)> {
+            let mut st = conn.prepare("SELECT model, request_json FROM jobs WHERE course_id=?1 AND kind=?2 ORDER BY id").unwrap();
+            st.query_map(params![id, kind], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect()
+        };
+        let src = queued("sources");
+        assert_eq!(src[0].0, "sonnet");
+        assert!(src[0].1.contains("\"effort\":\"low\"") && src[0].1.contains("Aim for 2-4 sources"));
+        answer(&conn, &paths, &sealer, json!({"sources":[]}));
+        // Quick writes even the exam unit with Sonnet.
+        assert!(queued("unit").iter().all(|(m, _)| m == "sonnet"));
+        answer(&conn, &paths, &sealer, unit_json("u01", false));
+        answer(&conn, &paths, &sealer, unit_json("u02", true));
+        assert!(queued("validate").iter().all(|(m, _)| m == "haiku"));
+        // No rewrites on Quick: a major issue is kept as a warning instead.
+        answer(&conn, &paths, &sealer, json!({"ok":false,"issues":[{"item_key":"u01-quiz","question_id":"q1","problem":"wrong","severity":"major"}]}));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        assert_eq!(queued("unit").len(), 2);
+        assert_eq!(status(&conn, &id), "active");
+    }
+
+    #[test]
     fn whole_course_lifecycle() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
@@ -375,7 +422,7 @@ mod tests {
         assert_eq!(status(&conn, &id), "review");
 
         let start = (Utc::now() - Duration::days(1)).date_naive();
-        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true).unwrap();
+        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true, &BuildSettings::default()).unwrap();
         assert_eq!(status(&conn, &id), "compiling");
         answer(&conn, &paths, &sealer, json!({"sources":[{"url":"https://openstax.org/x","title":"OpenStax","licence":"CC BY 4.0",
             "attribution":"OpenStax","free":true,"unit_keys":["u01","u02"],"note":""}]}));
@@ -467,7 +514,7 @@ mod tests {
         answer(&conn, &paths, &sealer, intake.clone());
         answer_intake(&conn, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, plan.clone());
-        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true).unwrap();
+        approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, &BuildSettings::default()).unwrap();
         answer(&conn, &paths, &sealer, sources.clone());
         answer(&conn, &paths, &sealer, unit.clone());
         drop(conn);
@@ -481,7 +528,7 @@ mod tests {
         answer_intake(&conn, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, one_unit);
         let start = (Utc::now() - Duration::days(1)).date_naive();
-        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true).unwrap();
+        approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true, &BuildSettings::default()).unwrap();
         answer(&conn, &paths, &sealer, sources);
         answer(&conn, &paths, &sealer, unit.clone());
         answer(&conn, &paths, &sealer, json!({"ok": true, "issues": [{"item_key":"u01-assign","question_id":"a2",

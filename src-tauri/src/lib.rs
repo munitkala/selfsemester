@@ -8,6 +8,7 @@ pub mod widget;
 pub mod worker;
 
 use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
+use course::build::BuildSettings;
 use course::{builder, marking, materials, pipeline, review, schedule::LatePolicy, schedule::Strictness, seal::Sealer};
 use paths::AppPaths;
 use rusqlite::Connection;
@@ -105,6 +106,7 @@ async fn run_test_stage(state: tauri::State<'_, AppState>) -> Res<TestResult> {
         }),
         tools: vec![],
         add_dirs: vec![],
+        effort: None,
     };
     let id = db::jobs::enqueue(&state.db.lock().unwrap(), None, "test", &req).map_err(err)?;
     for _ in 0..(10 * 60 * 2) {
@@ -206,20 +208,44 @@ fn choose_bundle(app: AppHandle, state: tauri::State<'_, AppState>, id: String, 
     Ok(())
 }
 
-#[tauri::command]
-fn approve_course(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-    id: String,
+/// The choices on the review step's enrol form.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Enrol {
     start_date: String,
     late_policy: LatePolicy,
     strictness: Strictness,
     on_transcript: bool,
-) -> Res<()> {
-    let start = chrono::NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").map_err(|_| "Pick a valid start date.")?;
-    pipeline::approve(&state.db.lock().unwrap(), &id, start, &late_policy, strictness, on_transcript)?;
+    build: BuildSettings,
+}
+
+#[tauri::command]
+fn approve_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String, enrol: Enrol) -> Res<()> {
+    let start = chrono::NaiveDate::parse_from_str(&enrol.start_date, "%Y-%m-%d").map_err(|_| "Pick a valid start date.")?;
+    pipeline::approve(&state.db.lock().unwrap(), &id, start, &enrol.late_policy, enrol.strictness, enrol.on_transcript, &enrol.build)?;
     changed(&app);
     Ok(())
+}
+
+/// The build levels, and the settings the learner built with last time (offered first).
+#[derive(Serialize)]
+struct BuildLevels {
+    presets: Vec<BuildSettings>,
+    last: BuildSettings,
+}
+
+#[tauri::command]
+fn build_levels(state: tauri::State<'_, AppState>) -> BuildLevels {
+    use course::build::{Level, preset};
+    BuildLevels {
+        presets: [Level::Quick, Level::Standard, Level::Thorough, Level::Max].into_iter().map(preset).collect(),
+        last: course::build::last_used(&state.db.lock().unwrap()),
+    }
+}
+
+#[tauri::command]
+fn build_estimate(state: tauri::State<'_, AppState>, id: String, build: BuildSettings) -> Res<course::build::Estimate> {
+    course::build::estimate(&state.db.lock().unwrap(), &id, &build)
 }
 
 #[tauri::command]
@@ -593,6 +619,8 @@ pub fn run() {
             answer_intake,
             choose_bundle,
             approve_course,
+            build_levels,
+            build_estimate,
             retry_course,
             delete_course,
             list_materials,

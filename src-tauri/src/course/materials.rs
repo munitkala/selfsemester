@@ -235,7 +235,7 @@ mod tests {
     }
 
     fn blank_req() -> StageRequest {
-        StageRequest { tier: Tier::Sonnet, system: None, prompt: "Write the unit.".into(), schema: serde_json::json!({}), tools: vec![], add_dirs: vec![] }
+        StageRequest { tier: Tier::Sonnet, system: None, prompt: "Write the unit.".into(), schema: serde_json::json!({}), tools: vec![], add_dirs: vec![], effort: None }
     }
 
     #[test]

@@ -122,6 +122,20 @@ export type Plan = {
 
 export type LatePolicy = { kind: "lock_zero" } | { kind: "penalty"; per_day: number; max_days: number };
 export type Strictness = "structured" | "sandbox";
+export type Model = "haiku" | "sonnet" | "opus" | "fable";
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type BuildLevel = "quick" | "standard" | "thorough" | "max" | "custom";
+export type BuildSettings = {
+  level: BuildLevel;
+  writer: Model;
+  exam_writer: Model;
+  checker: Model;
+  /** null leaves it to Claude Code's default */
+  effort: Effort | null;
+  rewrites: number;
+  sources: number;
+};
+export type BuildEstimate = { calls_min: number; calls_max: number; usage_vs_standard: number; minutes: number };
 
 export type CourseView = {
   id: string;
@@ -272,8 +286,10 @@ export const api = {
   create: (subject: string, notes: string) => invoke<string>("create_course", { subject, notes }),
   answerIntake: (id: string, answers: Record<string, string>) => invoke<void>("answer_intake", { id, answers }),
   chooseBundle: (id: string, choice: string) => invoke<void>("choose_bundle", { id, choice }),
-  approve: (id: string, startDate: string, latePolicy: LatePolicy, strictness: Strictness, onTranscript: boolean) =>
-    invoke<void>("approve_course", { id, startDate, latePolicy, strictness, onTranscript }),
+  approve: (id: string, startDate: string, latePolicy: LatePolicy, strictness: Strictness, onTranscript: boolean, build: BuildSettings) =>
+    invoke<void>("approve_course", { id, enrol: { startDate, latePolicy, strictness, onTranscript, build } }),
+  buildLevels: () => invoke<{ presets: BuildSettings[]; last: BuildSettings }>("build_levels"),
+  buildEstimate: (id: string, build: BuildSettings) => invoke<BuildEstimate>("build_estimate", { id, build }),
   retry: (id: string) => invoke<number>("retry_course", { id }),
   remove: (id: string) => invoke<void>("delete_course", { id }),
   materials: (courseId: string) => invoke<Material[]>("list_materials", { courseId }),

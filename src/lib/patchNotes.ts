@@ -5,6 +5,17 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "Next",
+    date: "",
+    title: "Build a course your way",
+    notes: [
+      "Pick a build level when you approve a course: Quick, Standard, Thorough, Maximum or Custom.",
+      "Higher levels use stronger models, think harder, rewrite units that fail their check and find more sources.",
+      "Custom lets you choose each model, the effort level, rewrites and reading list length.",
+      "See the number of Claude calls, rough usage and build time before you start.",
+    ],
+  },
+  {
     version: "0.7.0",
     date: "2026-11-12",
     title: "Lessons you can hear and try",

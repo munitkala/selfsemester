@@ -2,6 +2,7 @@
 
 pub mod attachments;
 pub mod audio;
+pub mod build;
 pub mod builder;
 pub mod insights;
 pub mod marking;

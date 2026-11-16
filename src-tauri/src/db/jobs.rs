@@ -206,7 +206,7 @@ mod tests {
     use std::sync::Mutex;
 
     fn req() -> StageRequest {
-        StageRequest { tier: Tier::Haiku, system: None, prompt: "p".into(), schema: json!({"type":"object"}), tools: vec![], add_dirs: vec![] }
+        StageRequest { tier: Tier::Haiku, system: None, prompt: "p".into(), schema: json!({"type":"object"}), tools: vec![], add_dirs: vec![], effort: None }
     }
 
     struct Fake(Mutex<Vec<Result<StageOutput, RunError>>>);

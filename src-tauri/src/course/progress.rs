@@ -76,7 +76,17 @@ pub fn course(conn: &Connection, course_id: &str, now: DateTime<Utc>) -> rusqlit
             (stage.to_string(), t, t)
         }
         "compiling" => {
-            let (src, unit, val) = (typical_secs(conn, "sources")?, typical_secs(conn, "unit")?, typical_secs(conn, "validate")?);
+            // Scaled for the course's build level (typical times are mostly from Standard builds).
+            let build = super::build::of_course(conn, course_id).unwrap_or_default();
+            let exam_share = super::pipeline::plan_of(conn, course_id)
+                .map(|p| p.units.iter().filter(|u| u.exam != "none").count() as f64 / p.units.len().max(1) as f64)
+                .unwrap_or(0.0);
+            let f = |k: &str| super::build::time_factor(&build, k, exam_share);
+            let (src, unit, val) = (
+                typical_secs(conn, "sources")? * f("sources"),
+                typical_secs(conn, "unit")? * f("unit"),
+                typical_secs(conn, "validate")? * f("validate"),
+            );
             let mut st = conn.prepare("SELECT state FROM units WHERE course_id=?1")?;
             let states: Vec<String> = st.query_map([course_id], |r| r.get(0))?.collect::<Result<_, _>>()?;
             let sources_done: bool = conn

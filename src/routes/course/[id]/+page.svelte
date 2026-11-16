@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { goto } from "$app/navigation";
-  import { api, live, type CourseView, type LatePolicy, type Strictness, type Tool } from "#lib/api.ts";
+  import { api, live, type BuildSettings, type CourseView, type LatePolicy, type Strictness, type Tool } from "#lib/api.ts";
   import StrictnessChoice from "#lib/StrictnessChoice.svelte";
+  import BuildChoice from "#lib/BuildChoice.svelte";
   import Materials from "#lib/Materials.svelte";
   import Classroom from "#lib/Classroom.svelte";
   import ProgressBar from "#lib/Progress.svelte";
@@ -22,6 +23,7 @@
   let maxDays = $state(3);
   let onTranscript = $state(true);
   let strictness = $state<Strictness>("structured");
+  let build = $state<BuildSettings | null>(null);
   let confirmDelete = $state(false);
   // Tools the plan asks for. Missing ones are installed before the course is built, if the learner says so.
   let tools = $state<Tool[]>([]);
@@ -87,7 +89,8 @@
           installing = null;
         }
       }
-      await api.approve(id, startDate, policy, strictness, onTranscript);
+      if (!build) throw "Pick a build level first.";
+      await api.approve(id, startDate, policy, strictness, onTranscript, $state.snapshot(build));
     });
   }
 
@@ -308,7 +311,8 @@
       </fieldset>
       <StrictnessChoice bind:value={strictness} />
       <label class="radio"><input type="checkbox" bind:checked={onTranscript} /> Put the final mark on my transcript</label>
-      <p class="small muted">Approving builds the whole course now: Claude finds free sources, then writes and checks every unit. This uses a fair amount of your plan's usage; if a limit is hit, it pauses and continues later.</p>
+      <BuildChoice courseId={id} bind:value={build} />
+      <p class="small muted">Approving builds the whole course now: Claude finds free sources, then writes and checks every unit. If a usage limit is hit, it pauses and continues later.</p>
       <button type="submit" disabled={busy}>Approve and build the course</button>
     </form>
 

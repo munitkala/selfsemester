@@ -110,6 +110,7 @@ fn req(tier: Tier, system: &str, prompt: String, schema: Value, tools: &[&str]) 
         schema,
         tools: tools.iter().map(|t| t.to_string()).collect(),
         add_dirs: vec![],
+        effort: None,
     }
 }
 
@@ -247,13 +248,20 @@ pub fn sources_schema() -> Value {
 }
 
 pub fn sources(plan: &Plan) -> StageRequest {
+    sources_up_to(plan, 10)
+}
+
+/// The reading-list stage, asking for at most `max` sources (the build level sets how many).
+pub fn sources_up_to(plan: &Plan, max: u8) -> StageRequest {
+    let max = max.max(2);
+    let min = (max / 3).max(2).min(max);
     let units: Vec<String> = plan.units.iter().map(|u| format!("{} {}: {}", u.key, u.title, u.topics.join(", "))).collect();
     let prompt = format!(
         "Course: {}\n{}\nUnits:\n{}\n\n\
          Find a reading list for this course using web search. Free and openly licensed first; for each source give \
          the exact URL, title, licence (e.g. 'CC BY 4.0', 'CC BY-NC-SA 4.0', 'all rights reserved'), a one-line \
          attribution, which unit keys it covers, and a short note on what to read. Mark free=false for anything paid \
-         or copyrighted (only include those when nothing free covers a topic). Aim for 3-10 sources that together \
+         or copyrighted (only include those when nothing free covers a topic). Aim for {min}-{max} sources that together \
          cover every unit. Only list URLs you actually found.",
         plan.title,
         plan.summary,

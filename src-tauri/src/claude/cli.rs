@@ -1,7 +1,7 @@
 //! Runs the user's installed Claude Code CLI as a child process.
 
 use super::output::parse_envelope;
-use super::{ClaudeRunner, ClaudeStatus, RunError, StageOutput, StageRequest};
+use super::{ClaudeRunner, ClaudeStatus, RunError, StageOutput, StageRequest, Tier};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -63,6 +63,15 @@ impl CliRunner {
         .map(|s| s.to_string())
         .collect();
         args.push(schema);
+        if req.tier == Tier::Fable {
+            // Not every plan includes Fable; Opus takes over when it isn't available.
+            args.push("--fallback-model".into());
+            args.push(Tier::Opus.alias().into());
+        }
+        if let Some(e) = req.effort {
+            args.push("--effort".into());
+            args.push(e.as_str().into());
+        }
         args.push("--tools".into());
         args.push(req.tools.join(","));
         if !req.tools.is_empty() {
@@ -198,6 +207,7 @@ mod tests {
             schema: json!({"type":"object"}),
             tools: tools.iter().map(|s| s.to_string()).collect(),
             add_dirs: vec![],
+            effort: None,
         }
     }
 
@@ -253,6 +263,7 @@ mod tests {
                 schema: json!({"type":"object","properties":{"answer":{"type":"integer"}},"required":["answer"],"additionalProperties":false}),
                 tools: vec![],
                 add_dirs: vec![],
+                effort: None,
             })
             .unwrap();
         assert_eq!(out.value["answer"], 5);
