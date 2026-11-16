@@ -13,7 +13,7 @@ of handwritten working back to Claude for marking against a rubric. Final marks 
 
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it the same way.
 
-> **Status: early (0.7.0).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.7.1).** It works end to end but has had little real-world use. Expect rough edges.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
 
@@ -49,7 +49,9 @@ by the app and all the themes.
 
 ## What's new
 
-Version 0.7.0 makes lessons something you can hear and try: language and music lessons play every word, tone and
+Version 0.7.1 lets you build a course your way: choose the models and effort, which kinds of graded work to keep
+(or lessons only), how detailed lessons are, and pause building at any point. Version 0.7.0 makes lessons something
+you can hear and try: language and music lessons play every word, tone and
 chord, lessons can have interactive figures, and you choose the tools for what you study (geometry, sheet music, 3D
 molecules, world maps), with a course asking before it installs anything else. Version 0.6.0 lets you build a course
 from your own documents.
@@ -81,7 +83,10 @@ Studio C++ build tools (see [Install](#install)).
 - **Build levels.** When you approve a course you choose how it's built. **Quick** uses lighter models at low
   effort with no rewrites, **Standard** is the default, and **Thorough** and **Maximum** use stronger models, think
   harder, rewrite units that fail their check and look for more sources. **Custom** lets you set each part. The
-  review step shows the number of calls, rough usage compared with Standard and the expected build time.
+  review step shows the number of calls, rough usage compared with Standard and the expected build time. You also
+  choose what the course includes (which kinds of graded work, or lessons only) and how detailed the lessons are.
+- **Pause building.** A course that's being built can be paused at any point and continued later. A step that was
+  running starts again from the beginning when you continue.
 - **Keep the app open while a course is building.** Building, releases, deadline checks and reminders only run while
   the window is open. Anything that fell due while it was closed is settled the next time you open it.
 - **AI teaching and marking can be wrong.** Before you enrol, each course shows a readiness report with honest

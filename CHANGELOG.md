@@ -3,7 +3,42 @@
 What changed in each version of SelfSemester, newest first. Changes that haven't been given a version number yet
 are listed under **Unreleased**.
 
-## Unreleased
+## 0.7.1 (2026-11-15)
+
+### Choose what a course includes (issue #4)
+
+**Why:** every course came out the same shape. Some people want lessons to read and nothing else, some don't want
+exams, and some want a course as detailed as a real university one.
+
+- The review step has a new **What to build** section:
+  - Tick the kinds of graded work to keep. Only the kinds the plan uses are listed. A kind you leave out gets no
+    items, and its share of the grade moves to the work you keep. Leaving out exams also drops them from the units
+    that had one.
+  - Untick everything for a **lessons-only** course: nothing is graded or marked, practice questions with worked
+    answers go inside the lessons, and the course doesn't go on your transcript. It finishes a week after its last
+    lesson comes out, and its archive says it had no graded work.
+  - **Lessons**: Brief (the key ideas and one worked example each), Standard, or In depth (like a demanding
+    university course, with derivations, harder examples and extension notes).
+  - **Figures, interactive figures and sound** can be turned off for text and formulas only. No tools are
+    installed for a course that won't use them.
+- The usage and time estimate takes these choices into account. The detail and media choices are offered again
+  next time; which work to leave out isn't, since that depends on each course.
+
+### Pause building a course (issue #2)
+
+- A **Pause building** button sits next to the building notice, from the first questions to the last unit. A step
+  that's running is stopped straight away and starts again when you continue, without counting as a failed try.
+- While paused, nothing is sent to Claude for that course, the countdown holds and the sidebar shows
+  **Building paused**. **Continue building** carries on where it stopped. Marking and replies for other courses
+  aren't affected.
+
+### Fixes
+
+- **Resume now** after a usage limit left the course showing "Paused" until every waiting step had run (issue #3).
+  Now all waiting steps go back in the queue at once, both when you press Resume now and when the limit resets on
+  its own, so the notice changes as soon as building starts again. When a limit is hit, every other waiting step
+  pauses with it, instead of each one trying and being refused in turn.
+- Retry times no longer end with a doubled full stop ("11:06 p.m..").
 
 ### Choose how hard Claude works on a course
 
@@ -23,7 +58,8 @@ usage they have. Until now every course was built the same way.
   Standard build and how long it should take. Usage is compared using each model's published price, since plans
   don't publish their real limits.
 - The level you picked last is offered first next time. Marking isn't affected.
-- Database schema v7 stores the level with each course. Courses built before keep the Standard settings.
+- Database schema v7 stores the level, the content choices and the paused state with each course. Courses built
+  before keep the Standard settings.
 
 ## 0.7.0 (2026-11-12)
 
