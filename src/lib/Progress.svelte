@@ -27,7 +27,8 @@
   <div class="spread small">
     <span>{p.stage}</span>
     <span class="muted">
-      {#if p.paused}Paused for your usage limit
+      {#if p.by_you}Paused
+      {:else if p.paused}Paused for your usage limit
       {:else if left > 5}About {words(left)} left
       {:else}Finishing up, taking a little longer than usual{/if}
     </span>

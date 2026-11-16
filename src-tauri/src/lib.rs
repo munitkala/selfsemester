@@ -248,6 +248,24 @@ fn build_estimate(state: tauri::State<'_, AppState>, id: String, build: BuildSet
     course::build::estimate(&state.db.lock().unwrap(), &id, &build)
 }
 
+/// Pause building a course. A step that's running now is stopped and goes back in the queue.
+#[tauri::command]
+fn pause_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    let running = pipeline::pause(&state.db.lock().unwrap(), &id)?;
+    if running {
+        state.runner.stop_current();
+    }
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn continue_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    pipeline::unpause(&state.db.lock().unwrap(), &id)?;
+    changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 fn retry_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<usize> {
     let n = pipeline::retry(&state.db.lock().unwrap(), &id)?;
@@ -620,6 +638,8 @@ pub fn run() {
             choose_bundle,
             approve_course,
             build_levels,
+            pause_course,
+            continue_course,
             build_estimate,
             retry_course,
             delete_course,

@@ -327,7 +327,56 @@ fn course_context(plan: &Plan, sources: &[SourceEntry]) -> String {
 
 /// `tools`: how lessons can use the installed tools (tools::lesson_guide).
 pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Option<&str>, tools: &str) -> StageRequest {
+    unit_styled(plan, sources, unit_key, feedback, tools, &crate::course::build::Content::default())
+}
+
+/// The unit stage, shaped by the learner's content choices (detail, media, which work to include).
+pub fn unit_styled(
+    plan: &Plan,
+    sources: &[SourceEntry],
+    unit_key: &str,
+    feedback: Option<&str>,
+    tools: &str,
+    content: &crate::course::build::Content,
+) -> StageRequest {
+    use crate::course::build::Detail;
     let u = plan.units.iter().find(|u| u.key == unit_key).expect("unit in plan");
+    let w = &plan.weights;
+    let graded = w.homework + w.assignment + w.quiz + w.test + w.exam + w.project > 0.0;
+    let (scale, depth) = match content.detail {
+        Detail::Brief => (
+            0.5,
+            "\nKEEP IT BRIEF: the key ideas, one worked example for each, and a short summary. Graded work is short \
+             (a few questions per item).\n",
+        ),
+        Detail::Standard => (1.0, ""),
+        Detail::InDepth => (
+            1.6,
+            "\nWRITE IN DEPTH, like a demanding university course: full derivations or reasoning, several worked \
+             examples of rising difficulty, edge cases, common mistakes and short extension notes. Graded work has \
+             more questions, from routine to challenging.\n",
+        ),
+    };
+    let media_line = if content.media {
+        "figures where the subject needs them (see FIGURES below), sound clips wherever hearing matters (see AUDIO \
+         below), "
+    } else {
+        ""
+    };
+    let guides = if content.media {
+        format!("{FIGURES_GUIDE}\n\n{WIDGETS_GUIDE}\n\n{tools}\n\n{AUDIO_GUIDE}")
+    } else {
+        "TEXT ONLY: the learner chose plain lessons. Write no ```plot, ```diagram, ```widget or ```audio blocks; \
+         explain in words, tables and LaTeX instead."
+            .to_string()
+    };
+    let items_rule = if graded {
+        "- items: the graded work released with this unit, using only kinds with a non-zero weight. Usually one \
+         homework or assignment plus a short quiz; add the exam if this unit has one."
+    } else {
+        "- items: an empty list. This course is lessons only, with no graded work. Put practice questions with \
+         worked answers inside the lesson instead."
+    };
     let exam_tier = if u.exam == "none" { Tier::Sonnet } else { Tier::Opus };
     let exam_line = match u.exam.as_str() {
         "midterm" => "This unit also includes the MIDTERM exam (kind 'exam') covering every unit so far.",
@@ -336,15 +385,12 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
     };
     let fix = feedback.map(|f| format!("\nA reviewer found these problems in your previous draft; fix them all:\n{f}\n")).unwrap_or_default();
     let prompt = format!(
-        "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{fix}\n\
+        "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{fix}{depth}\n\
          - lesson.markdown: a complete self-study lesson (roughly {mins} minutes of reading): explanations, worked \
-           examples with full working, figures where the subject needs them (see FIGURES below), sound clips wherever \
-           hearing matters (see AUDIO below), common mistakes, \
+           examples with full working, {media_line}common mistakes, \
            a short summary, and which reading-list sources to read (cite by title). Put lesson.sources_used = the \
            URLs you relied on. Subject family: {family}.\n\
-         - items: the graded work released with this unit, using only kinds with a non-zero weight. Usually one \
-           homework or assignment plus a short quiz; add the exam if this unit has one. Keys like '{key}-hw', \
-           '{key}-quiz', '{key}-exam'.\n\
+         {items_rule} Keys like '{key}-hw', '{key}-quiz', '{key}-exam'.\n\
          - module: 'quiz' for auto-marked items (every question mcq or numeric, with an exact answer_key entry); \
            'written' for typed answers; 'upload' when working is best done by hand and photographed.\n\
          - questions: clear and solvable from the lesson and readings. For mcq give 3-5 options and put the exact \
@@ -354,12 +400,12 @@ pub fn unit(plan: &Plan, sources: &[SourceEntry], unit_key: &str, feedback: Opti
          - answer_key: a full worked answer for EVERY question (this stays sealed and is used for marking).\n\
          - due_days: 2-14 days after release, matching the workload; quizzes 2-4, exams 1-3.\n\
          - The app can capture: {SUPPORTED_MODULES} Don't set work it can't capture. Questions and answer keys can \
-           use figures too, in the same format.\n\n{FIGURES_GUIDE}\n\n{WIDGETS_GUIDE}\n\n{tools}\n\n{AUDIO_GUIDE}",
+           use figures too, in the same format.\n\n{guides}",
         ctx = course_context(plan, sources),
         key = u.key,
         title = u.title,
         topics = u.topics.join(", "),
-        mins = (plan.pacing.hours_per_week * 60.0 * 0.4).round().max(20.0),
+        mins = (plan.pacing.hours_per_week * 60.0 * 0.4 * scale).round().max(20.0 * scale),
         family = if plan.domain_family.is_empty() { "general" } else { plan.domain_family.as_str() },
     );
     req(exam_tier, HOUSE_RULES, prompt, unit_schema(), &[])

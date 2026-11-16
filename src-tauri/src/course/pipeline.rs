@@ -113,9 +113,17 @@ pub fn approve(
     on_transcript: bool,
     build: &BuildSettings,
 ) -> Result<(), String> {
-    let plan = plan_of(conn, id)?;
+    let mut plan = plan_of(conn, id)?;
     let build = build.clone().clean();
     super::build::save_for_course(conn, id, &build)?;
+    // What to include: drop left-out kinds of work, and the tools text-only lessons won't use.
+    let lessons_only = super::build::apply_content(&mut plan, &build.content);
+    if !build.content.media {
+        plan.tools.clear();
+    }
+    // A course with nothing graded has no final mark to put on a transcript.
+    let on_transcript = on_transcript && !lessons_only;
+    conn.execute("UPDATE courses SET plan_json=?2 WHERE id=?1", params![id, serde_json::to_string(&plan).unwrap()]).map_err(io)?;
     conn.execute(
         "UPDATE courses SET title=?2, mode=?3, late_policy=?4, on_transcript=?5, readiness_json=?6, starts_at=?7, strictness=?8
          WHERE id=?1",
@@ -209,7 +217,7 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
             let build = super::build::of_course(conn, &id)?;
             for u in &plan.units {
-                let mut req = prompts::unit(&plan, &srcs, &u.key, None, &tool_guide);
+                let mut req = prompts::unit_styled(&plan, &srcs, &u.key, None, &tool_guide, &build.content);
                 build.for_unit(&mut req, u.exam != "none");
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
@@ -236,7 +244,7 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
                 let plan = plan_of(conn, &id)?;
                 let srcs = sources_of(conn, &id)?;
                 let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
-                let mut req = prompts::unit(&plan, &srcs, &key, Some(&fb), &crate::tools::lesson_guide(&crate::tools::installed(paths)));
+                let mut req = prompts::unit_styled(&plan, &srcs, &key, Some(&fb), &crate::tools::lesson_guide(&crate::tools::installed(paths)), &build.content);
                 build.for_unit(&mut req, plan.units.iter().any(|u| u.key == key && u.exam != "none"));
                 materials::attach(conn, &id, &mut req, materials::Use::Write)?;
                 jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
@@ -278,6 +286,7 @@ pub(crate) fn seal_and_start(conn: &Connection, paths: &AppPaths, sealer: &Seale
     let start = NaiveDate::parse_from_str(&start_s[..10.min(start_s.len())], "%Y-%m-%d").map_err(|e| e.to_string())?;
     let n = schedule::build(conn, paths, sealer, id, &plan, start).map_err(|e| e.to_string())?;
     set_status(conn, id, "active")?;
+    unpause(conn, id)?;
     Ok(schedule::Notice { title: "Course ready".into(), body: format!("{}: {n} items scheduled from {start}.", plan.title) })
 }
 
@@ -299,6 +308,34 @@ pub fn on_job_failed(conn: &Connection, job_id: i64) -> Result<(), String> {
     )
     .map_err(io)?;
     Ok(())
+}
+
+/// Pause building a course. Its build jobs stay in the queue but nothing is sent to Claude until `unpause`.
+/// Returns true when one of its steps is running now, so the caller should stop that call too.
+pub fn pause(conn: &Connection, id: &str) -> Result<bool, String> {
+    let status: String = conn.query_row("SELECT status FROM courses WHERE id=?1", [id], |r| r.get(0)).map_err(io)?;
+    if !matches!(status.as_str(), "intake" | "scoping" | "compiling") {
+        return Err("Only a course that's being built can be paused.".into());
+    }
+    conn.execute("UPDATE courses SET paused_at=coalesce(paused_at, ?2) WHERE id=?1", params![id, db::now_utc()]).map_err(io)?;
+    let running: i64 = conn
+        .query_row(
+            &format!("SELECT count(*) FROM jobs WHERE course_id=?1 AND status='running' AND kind IN {}", jobs::BUILD_KINDS),
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(io)?;
+    Ok(running > 0)
+}
+
+/// Carry on building a paused course.
+pub fn unpause(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("UPDATE courses SET paused_at=NULL WHERE id=?1", [id]).map_err(io)?;
+    Ok(())
+}
+
+pub fn is_paused(conn: &Connection, id: &str) -> Result<bool, String> {
+    conn.query_row("SELECT paused_at IS NOT NULL FROM courses WHERE id=?1", [id], |r| r.get(0)).map_err(io)
 }
 
 /// Re-queue a course's failed jobs.
@@ -393,6 +430,7 @@ mod tests {
         answer(&conn, &paths, &sealer, json!({"sources":[]}));
         // Quick writes even the exam unit with Sonnet.
         assert!(queued("unit").iter().all(|(m, _)| m == "sonnet"));
+        assert!(queued("unit")[0].1.contains("runs in a sealed frame")); // figures stay on by default
         answer(&conn, &paths, &sealer, unit_json("u01", false));
         answer(&conn, &paths, &sealer, unit_json("u02", true));
         assert!(queued("validate").iter().all(|(m, _)| m == "haiku"));
@@ -401,6 +439,50 @@ mod tests {
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
         assert_eq!(queued("unit").len(), 2);
         assert_eq!(status(&conn, &id), "active");
+    }
+
+    #[test]
+    fn lessons_only_course_has_no_work_and_finishes_without_a_mark() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
+        paths.ensure().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = create(&conn, "Quantum mechanics 1", "").unwrap();
+        answer(&conn, &paths, &sealer, json!({"questions":[]}));
+        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
+        let mut b = BuildSettings::default();
+        b.content.skip = crate::course::build::WORK_KINDS.iter().map(|k| k.to_string()).collect();
+        b.content.media = false;
+        b.content.detail = crate::course::build::Detail::InDepth;
+        let start = (Utc::now() - Duration::days(30)).date_naive();
+        approve(&conn, &id, start, &LatePolicy::LockZero, Strictness::Structured, true, &b).unwrap();
+        let on_transcript: bool = conn.query_row("SELECT on_transcript FROM courses WHERE id=?1", [&id], |r| r.get(0)).unwrap();
+        assert!(!on_transcript);
+        let plan = plan_of(&conn, &id).unwrap();
+        assert!(plan.units.iter().all(|u| u.exam == "none"));
+        answer(&conn, &paths, &sealer, json!({"sources":[]}));
+        let prompt: String = conn
+            .query_row("SELECT request_json FROM jobs WHERE course_id=?1 AND kind='unit' LIMIT 1", [&id], |r| r.get(0))
+            .unwrap();
+        assert!(prompt.contains("lessons only") && prompt.contains("TEXT ONLY") && prompt.contains("WRITE IN DEPTH"));
+        assert!(!prompt.contains("runs in a sealed frame"));
+        let lesson = |k: &str| json!({"lesson":{"title": format!("Lesson {k}"),"markdown":"Text","est_minutes":30,"sources_used":[]},"items":[]});
+        answer(&conn, &paths, &sealer, lesson("u01"));
+        answer(&conn, &paths, &sealer, lesson("u02"));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        assert_eq!(status(&conn, &id), "active");
+        let graded: i64 = conn.query_row("SELECT count(*) FROM items WHERE course_id=?1 AND kind!='lesson'", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(graded, 0);
+        tick(&conn, Utc::now()).unwrap();
+        let archive = marking::maybe_complete(&conn, &paths, &sealer, &id).unwrap().expect("completed");
+        let pct: Option<f64> = conn.query_row("SELECT final_percent FROM courses WHERE id=?1", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(pct, None);
+        let entries: i64 = conn.query_row("SELECT count(*) FROM transcript_entries", [], |r| r.get(0)).unwrap();
+        assert_eq!(entries, 0);
+        assert!(std::fs::read_to_string(archive.join("00 Course summary.md")).unwrap().contains("Lessons only"));
     }
 
     #[test]

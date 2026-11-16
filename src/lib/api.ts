@@ -10,9 +10,11 @@ export type JobSummary = {
   done: number;
   next_attempt_at: string | null;
   running_kind: string | null;
+  /** build steps held because their course is paused */
+  paused: number;
 };
 
-export type Progress = { stage: string; total_secs: number; remaining_secs: number; as_of: string; paused: boolean };
+export type Progress = { stage: string; total_secs: number; remaining_secs: number; as_of: string; paused: boolean; by_you?: boolean };
 
 export type ClaudeStatus = {
   installed: boolean;
@@ -125,6 +127,8 @@ export type Strictness = "structured" | "sandbox";
 export type Model = "haiku" | "sonnet" | "opus" | "fable";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export type BuildLevel = "quick" | "standard" | "thorough" | "max" | "custom";
+export type Detail = "brief" | "standard" | "in_depth";
+export type BuildContent = { skip: string[]; detail: Detail; media: boolean };
 export type BuildSettings = {
   level: BuildLevel;
   writer: Model;
@@ -134,6 +138,7 @@ export type BuildSettings = {
   effort: Effort | null;
   rewrites: number;
   sources: number;
+  content: BuildContent;
 };
 export type BuildEstimate = { calls_min: number; calls_max: number; usage_vs_standard: number; minutes: number };
 
@@ -162,6 +167,8 @@ export type CourseView = {
   strictness: Strictness;
   origin: "claude" | "manual";
   meta: CourseMeta;
+  /** building is paused by the learner */
+  paused: boolean;
 };
 
 export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
@@ -290,6 +297,8 @@ export const api = {
     invoke<void>("approve_course", { id, enrol: { startDate, latePolicy, strictness, onTranscript, build } }),
   buildLevels: () => invoke<{ presets: BuildSettings[]; last: BuildSettings }>("build_levels"),
   buildEstimate: (id: string, build: BuildSettings) => invoke<BuildEstimate>("build_estimate", { id, build }),
+  pauseCourse: (id: string) => invoke<void>("pause_course", { id }),
+  continueCourse: (id: string) => invoke<void>("continue_course", { id }),
   retry: (id: string) => invoke<number>("retry_course", { id }),
   remove: (id: string) => invoke<void>("delete_course", { id }),
   materials: (courseId: string) => invoke<Material[]>("list_materials", { courseId }),

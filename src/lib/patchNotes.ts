@@ -5,14 +5,18 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
-    version: "Next",
-    date: "",
+    version: "0.7.1",
+    date: "2026-11-15",
     title: "Build a course your way",
     notes: [
+      "Choose what a course includes: keep or drop homework, quizzes, exams and other work, or make it lessons only.",
+      "Lessons can be brief, standard or in depth, and text only if you'd rather not have figures or sound.",
+      "Pause building a course at any point, then continue where it stopped.",
       "Pick a build level when you approve a course: Quick, Standard, Thorough, Maximum or Custom.",
       "Higher levels use stronger models, think harder, rewrite units that fail their check and find more sources.",
       "Custom lets you choose each model, the effort level, rewrites and reading list length.",
       "See the number of Claude calls, rough usage and build time before you start.",
+      "Fixed: after a usage limit, Resume now didn't clear the paused notice until building had finished.",
     ],
   },
   {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type AppStatus, type BackupInfo } from "#lib/api.ts";
-  import { when } from "#lib/format.ts";
+  import { when, whenAtEnd } from "#lib/format.ts";
   import DisplaySettings from "#lib/DisplaySettings.svelte";
   import PatchNotes from "#lib/PatchNotes.svelte";
   import ToolList from "#lib/ToolList.svelte";
@@ -168,7 +168,7 @@
     {#if test.job.status === "done" && test.result}
       <p class="good">{test.result.message}</p>
     {:else if test.job.status === "waiting_usage"}
-      <p class="warn">Usage limit reached. It will retry after {when(test.job.next_attempt_at)}.</p>
+      <p class="warn">Usage limit reached. It will retry after {whenAtEnd(test.job.next_attempt_at)}.</p>
     {:else}
       <p class="bad">{test.job.status}: {test.job.error}</p>
     {/if}

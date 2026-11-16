@@ -7,7 +7,7 @@
   import Materials from "#lib/Materials.svelte";
   import Classroom from "#lib/Classroom.svelte";
   import ProgressBar from "#lib/Progress.svelte";
-  import { day, pct, letter, statusLabel, stageLabel, when, todayIso, kindLabel, size } from "#lib/format.ts";
+  import { day, pct, letter, statusLabel, stageLabel, when, whenAtEnd, todayIso, kindLabel, size } from "#lib/format.ts";
 
   const id = $derived(page.params.id ?? "");
   let c = $state<CourseView | null>(null);
@@ -79,7 +79,8 @@
     e.preventDefault();
     const policy: LatePolicy = lateKind === "lock_zero" ? { kind: "lock_zero" } : { kind: "penalty", per_day: perDay, max_days: maxDays };
     act(async () => {
-      for (const t of tools.filter((t) => !t.installed && wantTool[t.id])) {
+      // Text-only lessons don't use tools, so none are installed for them.
+      for (const t of textOnly ? [] : tools.filter((t) => !t.installed && wantTool[t.id])) {
         installing = t.name;
         try {
           await api.installTool(t.id);
@@ -100,6 +101,12 @@
   }
 
   const working = $derived(c && (c.jobs.running > 0 || c.jobs.queued > 0));
+  // Being built by Claude, so it can be paused.
+  const building = $derived(!!c && ["intake", "scoping", "compiling"].includes(c.status));
+  const textOnly = $derived(!!build && !build.content.media);
+  const lessonsOnly = $derived(
+    !!build && !!c?.plan && Object.entries(c.plan.weights).every(([k, w]) => w <= 0 || build!.content.skip.includes(k)),
+  );
   const plan = $derived(c?.plan ?? null);
   const unitsDone = $derived(c ? c.units.filter((u) => u.state === "validated").length : 0);
   const warnings = $derived(c ? c.units.flatMap((u) => (u.warnings ?? []).map((w) => `${u.title}: ${w}`)) : []);
@@ -147,13 +154,22 @@
     </div>
   {/if}
 
-  {#if c.jobs.waiting_usage}
+  {#if c.paused}
     <div class="note row">
-      <span>Paused because your Claude plan's usage limit was reached. It tries again automatically at {when(c.jobs.next_attempt_at)}. If your limit has already reset, resume now.</span>
+      <span>Building is paused. Nothing is sent to Claude for this course until you carry on; any step that was cut short starts again.</span>
+      <button onclick={() => act(() => api.continueCourse(id))} disabled={busy}>Continue building</button>
+    </div>
+  {:else if c.jobs.waiting_usage}
+    <div class="note row">
+      <span>Paused because your Claude plan's usage limit was reached. It tries again automatically at {whenAtEnd(c.jobs.next_attempt_at)}. If your limit has already reset, resume now.</span>
       <button onclick={() => act(() => api.resume(id))} disabled={busy}>Resume now</button>
+      {#if building}<button class="ghost" onclick={() => act(() => api.pauseCourse(id))} disabled={busy}>Pause building</button>{/if}
     </div>
   {:else if working}
-    <p class="note info"><span class="spinner" aria-hidden="true"></span> {c.jobs.running_kind ? `Claude is ${stageLabel[c.jobs.running_kind] ?? "working"}…` : "Waiting for the next step to start…"} You can leave this page; it carries on in the background.</p>
+    <div class="note info row">
+      <span><span class="spinner" aria-hidden="true"></span> {c.jobs.running_kind ? `Claude is ${stageLabel[c.jobs.running_kind] ?? "working"}…` : "Waiting for the next step to start…"} You can leave this page; it carries on in the background.</span>
+      {#if building}<button class="ghost" onclick={() => act(() => api.pauseCourse(id))} disabled={busy}>Pause building</button>{/if}
+    </div>
   {/if}
   {#if c.progress}
     <ProgressBar p={c.progress} />
@@ -168,7 +184,7 @@
 
   <!-- 1. Intake -->
   {:else if c.status === "intake"}
-    <section class="card working"><span class="spinner" aria-hidden="true"></span><p>Claude is reading your request and writing a few questions about your goals and level.</p></section>
+    <section class="card working">{#if !c.paused}<span class="spinner" aria-hidden="true"></span>{/if}<p>Claude is reading your request and writing a few questions about your goals and level.</p></section>
   {:else if c.status === "answering" && c.questions}
     <form class="card" onsubmit={submitAnswers}>
       <h2>A few questions first</h2>
@@ -194,7 +210,7 @@
 
   <!-- 2. Scope -->
   {:else if c.status === "scoping"}
-    <section class="card working"><span class="spinner" aria-hidden="true"></span><p>Claude is planning the syllabus, pacing and assessments, and estimating how well it can teach and mark this course.</p></section>
+    <section class="card working">{#if !c.paused}<span class="spinner" aria-hidden="true"></span>{/if}<p>Claude is planning the syllabus, pacing and assessments, and estimating how well it can teach and mark this course.</p></section>
 
   <!-- 3. Review: readiness report -->
   {:else if c.status === "review" && plan}
@@ -225,7 +241,7 @@
       {#if plan.unsupported_inputs.length}
         <p class="note">This version leaves out work the app can't capture yet: {plan.unsupported_inputs.map((s) => s.replace(/[.\s]+$/, "")).join("; ")}.</p>
       {/if}
-      {#if tools.length}
+      {#if tools.length && !textOnly}
         <h3>Tools for this course</h3>
         <p class="small muted">The lessons would use these. Untick any you don't want; the course is then written without it.</p>
         <ul class="course-tools">
@@ -310,8 +326,12 @@
         {/if}
       </fieldset>
       <StrictnessChoice bind:value={strictness} />
-      <label class="radio"><input type="checkbox" bind:checked={onTranscript} /> Put the final mark on my transcript</label>
-      <BuildChoice courseId={id} bind:value={build} />
+      {#if lessonsOnly}
+        <p class="small muted">A lessons-only course has no final mark, so it doesn't go on your transcript.</p>
+      {:else}
+        <label class="radio"><input type="checkbox" bind:checked={onTranscript} /> Put the final mark on my transcript</label>
+      {/if}
+      <BuildChoice courseId={id} weights={plan.weights} bind:value={build} />
       <p class="small muted">Approving builds the whole course now: Claude finds free sources, then writes and checks every unit. If a usage limit is hit, it pauses and continues later.</p>
       <button type="submit" disabled={busy}>Approve and build the course</button>
     </form>

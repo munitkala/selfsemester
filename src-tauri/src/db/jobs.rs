@@ -30,6 +30,14 @@ pub const PRIORITY_INTERACTIVE: i64 = 20;
 pub const PRIORITY_MARKING: i64 = 10;
 pub const PRIORITY_COMPILE: i64 = 0;
 
+/// Jobs that build a course. Pausing a course holds these; marking and replies carry on.
+pub const BUILD_KINDS: &str = "('intake','plan','sources','unit','validate')";
+
+/// SQL condition (on a `jobs` row) that is true when the job is held because its course's building is paused.
+pub fn held_sql() -> String {
+    format!("(kind IN {BUILD_KINDS} AND course_id IN (SELECT id FROM courses WHERE paused_at IS NOT NULL))")
+}
+
 pub fn enqueue(conn: &Connection, course_id: Option<&str>, kind: &str, req: &StageRequest) -> rusqlite::Result<i64> {
     enqueue_with(conn, course_id, kind, None, PRIORITY_INTERACTIVE, req)
 }
@@ -82,17 +90,25 @@ pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<Job>> {
     .optional()
 }
 
-/// Atomically take the oldest runnable job (queued, or waiting on usage whose wait is over) and mark it running.
+/// Atomically take the oldest runnable job and mark it running. Usage waits that are over all go back in the queue
+/// first, so the app stops showing them as paused as soon as it starts again. Jobs of a paused course stay put.
 pub fn claim_next(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Option<(i64, StageRequest)>> {
     let now_s = ts(now);
+    conn.execute(
+        "UPDATE jobs SET status = 'queued', next_attempt_at = NULL WHERE status = 'waiting_usage' AND next_attempt_at <= ?1",
+        [&now_s],
+    )?;
+    let sql = format!(
+        "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ?1
+         WHERE id = (
+           SELECT id FROM jobs WHERE status = 'queued' AND NOT {held}
+           ORDER BY priority DESC, id LIMIT 1)
+         RETURNING id, request_json",
+        held = held_sql()
+    );
     let row: Option<(i64, String)> = conn
         .query_row(
-            "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ?1
-             WHERE id = (
-               SELECT id FROM jobs
-               WHERE status = 'queued' OR (status = 'waiting_usage' AND next_attempt_at <= ?1)
-               ORDER BY priority DESC, id LIMIT 1)
-             RETURNING id, request_json",
+            &sql,
             [&now_s],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -100,11 +116,11 @@ pub fn claim_next(conn: &Connection, now: DateTime<Utc>) -> rusqlite::Result<Opt
     Ok(row.map(|(id, body)| (id, serde_json::from_str(&body).expect("stored request is valid"))))
 }
 
-/// Make jobs paused by a usage limit runnable now (all of them, or one course's). Returns how many.
+/// Put jobs paused by a usage limit back in the queue now (all of them, or one course's). Returns how many.
 /// If the limit is still in force they simply pause again; a refused call uses no usage.
 pub fn resume_waiting(conn: &Connection, course_id: Option<&str>, now: DateTime<Utc>) -> rusqlite::Result<usize> {
     conn.execute(
-        "UPDATE jobs SET next_attempt_at = ?1, updated_at = ?1
+        "UPDATE jobs SET status = 'queued', next_attempt_at = NULL, updated_at = ?1
          WHERE status = 'waiting_usage' AND (?2 IS NULL OR course_id = ?2)",
         params![ts(now), course_id],
     )
@@ -152,6 +168,19 @@ pub fn finish(conn: &Connection, id: i64, model: &str, result: &Result<StageOutp
             conn.execute(
                 "UPDATE jobs SET status='waiting_usage', error=?2, next_attempt_at=?3, updated_at=?4 WHERE id=?1",
                 params![id, message, ts(next), now_s],
+            )?;
+            // The limit is on the whole plan, so everything else waiting would be refused too: hold it all until then.
+            conn.execute(
+                "UPDATE jobs SET status='waiting_usage', error=?2, next_attempt_at=?3, updated_at=?4 WHERE status='queued' AND id != ?1",
+                params![id, message, ts(next), now_s],
+            )?;
+        }
+        Err(RunError::Stopped) => {
+            // Stopped on purpose (the course was paused): back in the queue, and this attempt doesn't count.
+            log_call(conn, id, model, None, "stopped")?;
+            conn.execute(
+                "UPDATE jobs SET status='queued', attempts=max(attempts-1, 0), error=NULL, updated_at=?2 WHERE id=?1",
+                params![id, now_s],
             )?;
         }
         Err(e) => {
@@ -283,6 +312,51 @@ mod tests {
         assert_eq!(resume_waiting(&conn, Some("other"), t0).unwrap(), 0);
         assert_eq!(resume_waiting(&conn, Some(&course), t0).unwrap(), 1);
         assert_eq!(claim_next(&conn, t0).unwrap().unwrap().0, id);
+    }
+
+    #[test]
+    fn a_usage_limit_holds_the_whole_queue_and_resume_releases_it() {
+        let conn = crate::db::open_in_memory().unwrap();
+        let a = enqueue(&conn, None, "t", &req()).unwrap();
+        let b = enqueue(&conn, None, "t", &req()).unwrap();
+        let t0 = Utc::now();
+        claim_next(&conn, t0).unwrap().unwrap();
+        let limited: Result<StageOutput, RunError> = Err(RunError::UsageLimited { retry_at: None, message: "limit".into() });
+        finish(&conn, a, "haiku", &limited, t0).unwrap();
+        assert_eq!(get(&conn, b).unwrap().unwrap().status, "waiting_usage");
+        assert!(claim_next(&conn, t0).unwrap().is_none());
+        // Resume puts every waiting job back in the queue at once, so nothing still reads as paused.
+        assert_eq!(resume_waiting(&conn, None, t0).unwrap(), 2);
+        assert_eq!(get(&conn, a).unwrap().unwrap().status, "queued");
+        assert_eq!(get(&conn, b).unwrap().unwrap().status, "queued");
+        // Same when the wait runs out on its own.
+        claim_next(&conn, t0).unwrap().unwrap();
+        finish(&conn, a, "haiku", &limited, t0).unwrap();
+        let later = t0 + chrono::Duration::hours(6);
+        claim_next(&conn, later).unwrap().unwrap();
+        assert_eq!(get(&conn, b).unwrap().unwrap().status, "queued");
+    }
+
+    #[test]
+    fn paused_courses_keep_their_build_steps_and_stopped_calls_requeue() {
+        let conn = crate::db::open_in_memory().unwrap();
+        let course = crate::course::pipeline::create(&conn, "Test", "").unwrap();
+        conn.execute("UPDATE courses SET status='compiling' WHERE id=?1", [&course]).unwrap();
+        let intake = claim_next(&conn, Utc::now()).unwrap().unwrap().0;
+        assert!(crate::course::pipeline::pause(&conn, &course).unwrap()); // the intake step is running
+        finish(&conn, intake, "haiku", &Err(RunError::Stopped), Utc::now()).unwrap();
+        let j = get(&conn, intake).unwrap().unwrap();
+        assert_eq!((j.status.as_str(), j.attempts), ("queued", 0));
+        let unit = enqueue_with(&conn, Some(&course), "unit", None, PRIORITY_COMPILE, &req()).unwrap();
+        let mark = enqueue_with(&conn, Some(&course), "mark", None, PRIORITY_MARKING, &req()).unwrap();
+        let s = crate::course::job_summary(&conn, Some(&course)).unwrap();
+        assert_eq!((s.queued, s.paused), (1, 2));
+        // Marking isn't held; building is.
+        assert_eq!(claim_next(&conn, Utc::now()).unwrap().unwrap().0, mark);
+        assert!(claim_next(&conn, Utc::now()).unwrap().is_none());
+        crate::course::pipeline::unpause(&conn, &course).unwrap();
+        assert_eq!(claim_next(&conn, Utc::now()).unwrap().unwrap().0, intake);
+        assert_eq!(claim_next(&conn, Utc::now()).unwrap().unwrap().0, unit);
     }
 
     #[test]

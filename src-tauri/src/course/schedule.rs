@@ -136,6 +136,16 @@ pub fn build(
     let last_due: Option<String> = conn
         .query_row("SELECT max(due_at) FROM items WHERE course_id=?1", [course_id], |r| r.get(0))
         .map_err(io)?;
+    // A lessons-only course has no due dates: it ends a week after its last lesson comes out.
+    let last_due = match last_due {
+        Some(d) => Some(d),
+        None => conn
+            .query_row("SELECT max(release_at) FROM items WHERE course_id=?1", [course_id], |r| r.get::<_, Option<String>>(0))
+            .map_err(io)?
+            .as_deref()
+            .and_then(parse_ts)
+            .map(|t| ts(t + Duration::days(7))),
+    };
     conn.execute(
         "UPDATE courses SET starts_at=?2, ends_at=?3, updated_at=?4 WHERE id=?1",
         params![course_id, ts(first), last_due, crate::db::now_utc()],

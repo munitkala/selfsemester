@@ -22,6 +22,78 @@ pub enum Level {
     Custom,
 }
 
+/// How much each lesson covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Detail {
+    /// The key ideas and one worked example each.
+    Brief,
+    #[default]
+    Standard,
+    /// As detailed as a demanding university course.
+    InDepth,
+}
+
+/// The kinds of graded work a plan can hold.
+pub const WORK_KINDS: [&str; 6] = ["homework", "assignment", "quiz", "test", "exam", "project"];
+
+/// What goes into the course, separate from how hard Claude works on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Content {
+    /// Kinds of graded work to leave out (from `WORK_KINDS`). Leaving out all of them makes a lessons-only course.
+    pub skip: Vec<String>,
+    pub detail: Detail,
+    /// Figures, interactive figures and sound clips in lessons. False = text and formulas only.
+    pub media: bool,
+}
+
+impl Default for Content {
+    fn default() -> Self {
+        Content { skip: vec![], detail: Detail::Standard, media: true }
+    }
+}
+
+impl Content {
+    fn clean(mut self) -> Self {
+        self.skip.retain(|k| WORK_KINDS.contains(&k.as_str()));
+        self.skip.sort();
+        self.skip.dedup();
+        self
+    }
+}
+
+/// Apply the content choices to a plan before it's built: drop the left-out kinds of work (and exams from units
+/// when exams are left out) and spread their weight over the kinds that remain. Returns true when no graded work
+/// is left, i.e. a lessons-only course.
+pub fn apply_content(plan: &mut super::types::Plan, c: &Content) -> bool {
+    let w = &mut plan.weights;
+    for k in &c.skip {
+        match k.as_str() {
+            "homework" => w.homework = 0.0,
+            "assignment" => w.assignment = 0.0,
+            "quiz" => w.quiz = 0.0,
+            "test" => w.test = 0.0,
+            "exam" => w.exam = 0.0,
+            "project" => w.project = 0.0,
+            _ => {}
+        }
+    }
+    if c.skip.iter().any(|k| k == "exam") {
+        for u in &mut plan.units {
+            u.exam = "none".into();
+        }
+    }
+    let sum = w.homework + w.assignment + w.quiz + w.test + w.exam + w.project;
+    if sum <= 0.0 {
+        return true;
+    }
+    for x in [&mut w.homework, &mut w.assignment, &mut w.quiz, &mut w.test, &mut w.exam, &mut w.project] {
+        *x /= sum;
+    }
+    false
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildSettings {
     pub level: Level,
@@ -37,6 +109,9 @@ pub struct BuildSettings {
     pub rewrites: u8,
     /// Longest reading list to ask for.
     pub sources: u8,
+    /// What goes into the course. Independent of the level.
+    #[serde(default)]
+    pub content: Content,
 }
 
 impl Default for BuildSettings {
@@ -53,17 +128,19 @@ pub fn preset(level: Level) -> BuildSettings {
         Level::Thorough => (Tier::Opus, Tier::Opus, Tier::Sonnet, Some(Effort::High), 2, 15),
         Level::Max => (Tier::Fable, Tier::Fable, Tier::Opus, Some(Effort::Max), 3, 25),
     };
-    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources }
+    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources, content: Content::default() }
 }
 
 impl BuildSettings {
     /// Keep numbers in range, and make a preset match its definition (so only Custom can differ).
     pub fn clean(mut self) -> Self {
+        let content = self.content.clean();
         if self.level != Level::Custom {
-            return preset(self.level);
+            return BuildSettings { content, ..preset(self.level) };
         }
         self.rewrites = self.rewrites.min(MAX_REWRITES);
         self.sources = self.sources.clamp(2, MAX_SOURCES);
+        self.content = content;
         self
     }
 
@@ -114,6 +191,11 @@ pub fn last_used(conn: &Connection) -> BuildSettings {
         .flatten()
         .and_then(|s| serde_json::from_str::<BuildSettings>(&s).ok())
         .map(BuildSettings::clean)
+        // Which kinds of work to leave out depends on each course's plan, so that isn't carried over.
+        .map(|mut b| {
+            b.content.skip.clear();
+            b
+        })
         .unwrap_or_default()
 }
 
@@ -187,6 +269,18 @@ pub struct Estimate {
 struct Shape {
     units: u32,
     exam_units: u32,
+    /// Size of a unit compared with a Standard one (lesson detail, media, whether there's graded work).
+    unit_scale: f64,
+}
+
+/// Rough size of a unit for these content choices, compared with the default.
+pub fn unit_scale(c: &Content, lessons_only: bool) -> f64 {
+    let detail = match c.detail {
+        Detail::Brief => 0.6,
+        Detail::Standard => 1.0,
+        Detail::InDepth => 1.6,
+    };
+    detail * if c.media { 1.0 } else { 0.85 } * if lessons_only { 0.6 } else { 1.0 }
 }
 
 fn cost(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> (f64, f64) {
@@ -198,18 +292,19 @@ fn cost(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> (f64, f64) 
     // Relative sizes: a reading list (with searches) ~ 1, a unit ~ 3, a check ~ 1.
     let usage = e
         * (model_weight(b.writer)
-            + drafts * 3.0 * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
+            + drafts * 3.0 * s.unit_scale * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
             + drafts * (s.units as f64) * model_weight(b.checker));
     let exam_share = if s.units > 0 { exams / s.units as f64 } else { 0.0 };
     let f = |k: &str| time_factor(b, k, exam_share);
     let time = secs("sources") * f("sources")
-        + drafts * (s.units as f64) * (secs("unit") * f("unit") + secs("validate") * f("validate"));
+        + drafts * (s.units as f64) * (secs("unit") * f("unit") * s.unit_scale + secs("validate") * f("validate"));
     (usage, time)
 }
 
-fn estimate_shape(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> Estimate {
+/// `s` is the course as it will be built; `planned` is the plan as written, which a Standard build is compared with.
+fn estimate_shape(b: &BuildSettings, s: &Shape, planned: &Shape, secs: &dyn Fn(&str) -> f64) -> Estimate {
     let (usage, time) = cost(b, s, secs);
-    let (base, _) = cost(&preset(Level::Standard), s, secs);
+    let (base, _) = cost(&preset(Level::Standard), planned, secs);
     Estimate {
         calls_min: 1 + 2 * s.units,
         calls_max: 1 + 2 * s.units * (1 + b.rewrites as u32),
@@ -221,10 +316,18 @@ fn estimate_shape(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> E
 /// Estimate for building this planned course with these settings. Step times come from past builds on this
 /// computer (they were measured mostly on Standard), scaled for the models and effort chosen.
 pub fn estimate(conn: &Connection, id: &str, b: &BuildSettings) -> Result<Estimate, String> {
-    let plan = super::pipeline::plan_of(conn, id)?;
-    let shape = Shape { units: plan.units.len() as u32, exam_units: plan.units.iter().filter(|u| u.exam != "none").count() as u32 };
+    let b = b.clone().clean();
+    let mut plan = super::pipeline::plan_of(conn, id)?;
+    let shape_of = |p: &super::types::Plan, scale: f64| Shape {
+        units: p.units.len() as u32,
+        exam_units: p.units.iter().filter(|u| u.exam != "none").count() as u32,
+        unit_scale: scale,
+    };
+    let planned = shape_of(&plan, 1.0);
+    let lessons_only = apply_content(&mut plan, &b.content);
+    let shape = shape_of(&plan, unit_scale(&b.content, lessons_only));
     let secs = |k: &str| super::progress::typical_secs(conn, k).unwrap_or(60.0);
-    Ok(estimate_shape(&b.clone().clean(), &shape, &secs))
+    Ok(estimate_shape(&b, &shape, &planned, &secs))
 }
 
 #[cfg(test)]
@@ -243,16 +346,16 @@ mod tests {
 
     #[test]
     fn levels_climb_in_usage() {
-        let s = Shape { units: 6, exam_units: 2 };
+        let s = Shape { units: 6, exam_units: 2, unit_scale: 1.0 };
         let u: Vec<f64> = [Level::Quick, Level::Standard, Level::Thorough, Level::Max]
             .iter()
-            .map(|l| estimate_shape(&preset(*l), &s, &secs).usage_vs_standard)
+            .map(|l| estimate_shape(&preset(*l), &s, &s, &secs).usage_vs_standard)
             .collect();
         assert!(u.windows(2).all(|w| w[0] < w[1]), "{u:?}");
         assert!((u[1] - 1.0).abs() < 1e-9);
-        let e = estimate_shape(&preset(Level::Quick), &s, &secs);
+        let e = estimate_shape(&preset(Level::Quick), &s, &s, &secs);
         assert_eq!((e.calls_min, e.calls_max), (13, 13));
-        let e = estimate_shape(&preset(Level::Max), &s, &secs);
+        let e = estimate_shape(&preset(Level::Max), &s, &s, &secs);
         assert_eq!((e.calls_min, e.calls_max), (13, 49));
     }
 
@@ -264,6 +367,34 @@ mod tests {
         }
         assert!(time_factor(&preset(Level::Max), "unit", 0.5) > 1.0);
         assert!(time_factor(&preset(Level::Quick), "unit", 0.5) < 1.0);
+    }
+
+    #[test]
+    fn leaving_out_work_reweights_and_drops_exams() {
+        let mut plan: crate::course::types::Plan = serde_json::from_value(crate::course::prompts::tests::sample_plan()).unwrap();
+        let c = Content { skip: vec!["exam".into()], ..Content::default() };
+        assert!(!apply_content(&mut plan, &c));
+        let w = &plan.weights;
+        assert_eq!(w.exam, 0.0);
+        assert!((w.homework - 2.0 / 3.0).abs() < 1e-9 && (w.quiz - 1.0 / 3.0).abs() < 1e-9);
+        assert!(plan.units.iter().all(|u| u.exam == "none"));
+        let all = Content { skip: WORK_KINDS.iter().map(|k| k.to_string()).collect(), ..Content::default() };
+        assert!(apply_content(&mut plan, &all));
+    }
+
+    #[test]
+    fn content_survives_level_changes_but_skips_are_per_course() {
+        let mut b = preset(Level::Thorough);
+        b.content = Content { skip: vec!["quiz".into(), "bogus".into()], detail: Detail::Brief, media: false };
+        let c = b.clone().clean();
+        assert_eq!(c.content, Content { skip: vec!["quiz".into()], detail: Detail::Brief, media: false });
+        let conn = crate::db::open_in_memory().unwrap();
+        crate::db::set_setting(&conn, "build_settings", &serde_json::to_string(&c).unwrap()).unwrap();
+        let last = last_used(&conn);
+        assert!(last.content.skip.is_empty() && last.content.detail == Detail::Brief && !last.content.media);
+        // Settings saved before content options existed still load.
+        let old: BuildSettings = serde_json::from_str(r#"{"level":"quick","writer":"sonnet","exam_writer":"sonnet","checker":"haiku","effort":"low","rewrites":0,"sources":4}"#).unwrap();
+        assert_eq!(old.content, Content::default());
     }
 
     #[test]

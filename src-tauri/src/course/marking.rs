@@ -376,7 +376,17 @@ pub fn maybe_complete(conn: &Connection, paths: &AppPaths, sealer: &Sealer, cour
     let unread_or_pending: i64 = conn
         .query_row("SELECT count(*) FROM items WHERE course_id=?1 AND state IN ('locked','submitted')", [course_id], |r| r.get(0))
         .map_err(io)?;
-    if !g.complete || unread_or_pending > 0 {
+    let graded: i64 = conn
+        .query_row("SELECT count(*) FROM items WHERE course_id=?1 AND kind!='lesson'", [course_id], |r| r.get(0))
+        .map_err(io)?;
+    if graded == 0 {
+        // Lessons only: finished once every lesson is out and the course's last week is over.
+        let ends_at: Option<String> = conn.query_row("SELECT ends_at FROM courses WHERE id=?1", [course_id], |r| r.get(0)).map_err(io)?;
+        let over = ends_at.as_deref().and_then(super::schedule::parse_ts).is_some_and(|t| Utc::now() >= t);
+        if unread_or_pending > 0 || !over {
+            return Ok(None);
+        }
+    } else if !g.complete || unread_or_pending > 0 {
         return Ok(None);
     }
     // A sandbox course keeps taking attempts until every item's key is revealed or the course stops taking work.
@@ -394,7 +404,8 @@ pub fn maybe_complete(conn: &Connection, paths: &AppPaths, sealer: &Sealer, cour
             return Ok(None);
         }
     }
-    let final_pct = g.current.unwrap_or(0.0);
+    // No graded work means no final mark.
+    let final_pct = (graded > 0).then(|| g.current.unwrap_or(0.0));
     let now = crate::db::now_utc();
     conn.execute(
         "UPDATE courses SET status='completed', final_percent=?2, completed_at=?3, updated_at=?3 WHERE id=?1",
@@ -406,7 +417,7 @@ pub fn maybe_complete(conn: &Connection, paths: &AppPaths, sealer: &Sealer, cour
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
         })
         .map_err(io)?;
-    if on_transcript {
+    if let (true, Some(final_pct)) = (on_transcript, final_pct) {
         let (l, _) = letter(final_pct);
         let breakdown = kind_breakdown(conn, course_id).map_err(io)?;
         conn.execute(
@@ -439,7 +450,7 @@ fn safe_name(s: &str) -> String {
 
 /// `Documents\SelfSemester\Completed\<course>\`: summary, lesson summaries, work given, my work, feedback, references.
 /// Leaves out prompts, sealed files, logs and big downloads.
-fn write_archive(conn: &Connection, paths: &AppPaths, sealer: &Sealer, course_id: &str, title: &str, final_pct: f64) -> std::io::Result<PathBuf> {
+fn write_archive(conn: &Connection, paths: &AppPaths, sealer: &Sealer, course_id: &str, title: &str, final_pct: Option<f64>) -> std::io::Result<PathBuf> {
     let io = |e: rusqlite::Error| std::io::Error::other(e);
     let root = paths.completed_dir().join(safe_name(title));
     for sub in ["01 Lesson summaries", "02 Work given", "03 My work", "04 Feedback and marks"] {
@@ -450,9 +461,13 @@ fn write_archive(conn: &Connection, paths: &AppPaths, sealer: &Sealer, course_id
         .query_row("SELECT plan_json FROM courses WHERE id=?1", [course_id], |r| r.get::<_, Option<String>>(0))
         .map_err(io)?
         .and_then(|s| serde_json::from_str(&s).ok());
-    let (letter_s, gpa) = letter(final_pct);
-
-    let mut summary = format!("# {title}\n\nFinal mark: **{final_pct:.1}%** ({letter_s}, {gpa:.1} GPA)\n\n");
+    let mut summary = match final_pct {
+        Some(p) => {
+            let (letter_s, gpa) = letter(p);
+            format!("# {title}\n\nFinal mark: **{p:.1}%** ({letter_s}, {gpa:.1} GPA)\n\n")
+        }
+        None => format!("# {title}\n\nLessons only: this course had no graded work.\n\n"),
+    };
     if let Some(p) = &plan {
         summary += &format!("{}\n\n## Syllabus\n\n", p.summary);
         for u in &p.units {

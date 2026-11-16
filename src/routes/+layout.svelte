@@ -5,7 +5,7 @@
   import { onMount } from "svelte";
   import { api, live, type JobSummary } from "#lib/api.ts";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { stageLabel, when } from "#lib/format.ts";
+  import { stageLabel, when, whenAtEnd } from "#lib/format.ts";
   import { goto } from "$app/navigation";
   import { apply, prefs, save, watchSystem } from "#lib/prefs.svelte.ts";
   import Icon from "#lib/Icon.svelte";
@@ -169,9 +169,14 @@
         </span>
       {:else if jobs?.waiting_usage}
         <div>
-          <span class="warn">Paused: usage limit reached.<span class:sr={compact}> Next try {when(jobs.next_attempt_at)}.</span></span>
+          <span class="warn">Paused: usage limit reached.<span class:sr={compact}> Next try {whenAtEnd(jobs.next_attempt_at)}.</span></span>
           <button class="ghost resume" onclick={() => api.resume()}>Resume now</button>
         </div>
+      {:else if jobs?.paused}
+        <span class="chip" title={compact ? "Building paused" : undefined}>
+          <span class="dot paused" aria-hidden="true"></span>
+          <span class="muted" class:sr={compact}>Building paused</span>
+        </span>
       {:else}
         <span class="chip" title={compact ? "Claude is idle" : undefined}>
           <span class="dot" aria-hidden="true"></span>
@@ -387,6 +392,9 @@
     border-radius: 50%;
     background: var(--good);
     flex: none;
+  }
+  .dot.paused {
+    background: var(--muted);
   }
   .collapse {
     align-self: flex-start;

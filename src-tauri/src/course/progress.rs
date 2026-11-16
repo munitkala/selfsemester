@@ -37,8 +37,11 @@ pub struct Progress {
     pub remaining_secs: f64,
     /// When the estimate was made; the UI counts down from here.
     pub as_of: String,
-    /// Paused for the usage limit, so the countdown is on hold.
+    /// Paused (usage limit, or the learner paused building), so the countdown is on hold.
     pub paused: bool,
+    /// The learner paused it, as opposed to a usage limit.
+    #[serde(default)]
+    pub by_you: bool,
 }
 
 fn running_elapsed(conn: &Connection, course_id: &str, now: DateTime<Utc>) -> rusqlite::Result<Option<(String, f64)>> {
@@ -66,7 +69,8 @@ pub fn course(conn: &Connection, course_id: &str, now: DateTime<Utc>) -> rusqlit
     let status: String = conn.query_row("SELECT status FROM courses WHERE id=?1", [course_id], |r| r.get(0))?;
     let running = running_elapsed(conn, course_id, now)?;
     let as_of = super::schedule::ts(now);
-    let paused = paused(conn, course_id)?;
+    let by_you = super::pipeline::is_paused(conn, course_id).unwrap_or(false);
+    let paused = paused(conn, course_id)? || by_you;
 
     let (stage, total, mut remaining) = match status.as_str() {
         "intake" | "scoping" => {
@@ -78,13 +82,21 @@ pub fn course(conn: &Connection, course_id: &str, now: DateTime<Utc>) -> rusqlit
         "compiling" => {
             // Scaled for the course's build level (typical times are mostly from Standard builds).
             let build = super::build::of_course(conn, course_id).unwrap_or_default();
-            let exam_share = super::pipeline::plan_of(conn, course_id)
+            let plan = super::pipeline::plan_of(conn, course_id).ok();
+            let exam_share = plan
+                .as_ref()
                 .map(|p| p.units.iter().filter(|u| u.exam != "none").count() as f64 / p.units.len().max(1) as f64)
                 .unwrap_or(0.0);
+            // The stored plan already has the content choices applied, so no weight left means lessons only.
+            let lessons_only = plan.as_ref().is_some_and(|p| {
+                let w = &p.weights;
+                w.homework + w.assignment + w.quiz + w.test + w.exam + w.project <= 0.0
+            });
+            let unit_scale = super::build::unit_scale(&build.content, lessons_only);
             let f = |k: &str| super::build::time_factor(&build, k, exam_share);
             let (src, unit, val) = (
                 typical_secs(conn, "sources")? * f("sources"),
-                typical_secs(conn, "unit")? * f("unit"),
+                typical_secs(conn, "unit")? * f("unit") * unit_scale,
                 typical_secs(conn, "validate")? * f("validate"),
             );
             let mut st = conn.prepare("SELECT state FROM units WHERE course_id=?1")?;
@@ -116,7 +128,7 @@ pub fn course(conn: &Connection, course_id: &str, now: DateTime<Utc>) -> rusqlit
         remaining -= secs.min(typical_secs(conn, &kind)?).max(0.0);
     }
     remaining = remaining.max(0.0);
-    Ok(Some(Progress { stage, total_secs: total, remaining_secs: remaining, as_of, paused }))
+    Ok(Some(Progress { stage, total_secs: total, remaining_secs: remaining, as_of, paused, by_you }))
 }
 
 /// Estimate for marking one submission. None when it isn't waiting for Claude.
@@ -156,6 +168,7 @@ pub fn marking(conn: &Connection, submission_id: &str, now: DateTime<Utc>) -> ru
         remaining_secs: remaining.max(0.0),
         as_of: super::schedule::ts(now),
         paused: status == "waiting_usage",
+        by_you: false,
     }))
 }
 

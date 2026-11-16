@@ -131,6 +131,9 @@ pub enum RunError {
     BadOutput(String),
     #[error("request too large for the command line: {0}")]
     TooLarge(String),
+    /// The call was stopped on purpose (its course was paused). It goes back in the queue.
+    #[error("stopped because building was paused")]
+    Stopped,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -146,4 +149,6 @@ impl RunError {
 pub trait ClaudeRunner: Send + Sync {
     fn status(&self) -> ClaudeStatus;
     fn run(&self, req: &StageRequest) -> Result<StageOutput, RunError>;
+    /// Stop the call that's running now, if any (it returns `RunError::Stopped`).
+    fn stop_current(&self) {}
 }

@@ -4,6 +4,11 @@ export function when(t: string | null | undefined): string {
   return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/** `when`, for the end of a sentence: drops a trailing full stop ("p.m.") so the sentence's own isn't doubled. */
+export function whenAtEnd(t: string | null | undefined): string {
+  return when(t).replace(/\.$/, "");
+}
+
 export function day(t: string | null | undefined): string {
   if (!t) return "";
   return new Date(t).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });

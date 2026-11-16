@@ -40,15 +40,20 @@ pub struct JobSummary {
     pub next_attempt_at: Option<String>,
     /// Kind of the job running now, if any.
     pub running_kind: Option<String>,
+    /// Build steps held because their course is paused (not counted in `queued` or `waiting_usage`).
+    pub paused: i64,
 }
 
 pub fn job_summary(conn: &Connection, course_id: Option<&str>) -> rusqlite::Result<JobSummary> {
     let filter = if course_id.is_some() { "WHERE course_id = ?1" } else { "WHERE ?1 IS NULL OR 1" };
+    let held = crate::db::jobs::held_sql();
     let sql = format!(
         "SELECT
-           sum(status='queued'), sum(status='running'), sum(status='waiting_usage'), sum(status='failed'), sum(status='done'),
-           min(CASE WHEN status='waiting_usage' THEN next_attempt_at END),
-           max(CASE WHEN status='running' THEN kind END)
+           sum(status='queued' AND NOT {held}), sum(status='running'), sum(status='waiting_usage' AND NOT {held}),
+           sum(status='failed'), sum(status='done'),
+           min(CASE WHEN status='waiting_usage' AND NOT {held} THEN next_attempt_at END),
+           max(CASE WHEN status='running' THEN kind END),
+           sum(status IN ('queued','waiting_usage') AND {held})
          FROM jobs {filter}"
     );
     conn.query_row(&sql, params![course_id], |r| {
@@ -60,6 +65,7 @@ pub fn job_summary(conn: &Connection, course_id: Option<&str>) -> rusqlite::Resu
             done: r.get::<_, Option<i64>>(4)?.unwrap_or(0),
             next_attempt_at: r.get(5)?,
             running_kind: r.get(6)?,
+            paused: r.get::<_, Option<i64>>(7)?.unwrap_or(0),
         })
     })
 }
@@ -212,13 +218,15 @@ pub struct CourseView {
     pub strictness: String,
     pub origin: String,
     pub meta: types::CourseMeta,
+    /// Building is paused by the learner.
+    pub paused: bool,
 }
 
 pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView, String> {
     let mut v = conn
         .query_row(
             "SELECT id, title, subject, status, error, mode, late_policy, on_transcript, questions_json, intake_json, plan_json,
-                    bundle_choice, starts_at, ends_at, final_percent, strictness, origin, meta_json
+                    bundle_choice, starts_at, ends_at, final_percent, strictness, origin, meta_json, paused_at IS NOT NULL
              FROM courses WHERE id=?1",
             [id],
             |r| {
@@ -239,7 +247,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     ends_at: r.get(13)?,
                     final_percent: r.get(14)?,
                     grades: marking::Grades { current: None, decided: 0.0, complete: false },
-                    jobs: JobSummary { queued: 0, running: 0, waiting_usage: 0, failed: 0, done: 0, next_attempt_at: None, running_kind: None },
+                    jobs: JobSummary { queued: 0, running: 0, waiting_usage: 0, failed: 0, done: 0, next_attempt_at: None, running_kind: None, paused: 0 },
                     units: vec![],
                     sources: vec![],
                     archive_dir: None,
@@ -247,6 +255,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     strictness: r.get(15)?,
                     origin: r.get(16)?,
                     meta: r.get::<_, Option<String>>(17)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
+                    paused: r.get(18)?,
                 })
             },
         )

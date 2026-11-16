@@ -5,6 +5,7 @@ use super::{ClaudeRunner, ClaudeStatus, RunError, StageOutput, StageRequest, Tie
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Windows' command line tops out near 32,767 characters; keep a margin for the other arguments.
@@ -15,15 +16,17 @@ pub struct CliRunner {
     /// Empty folder the CLI runs in, so no project CLAUDE.md or files are picked up.
     workdir: PathBuf,
     timeout: Duration,
+    /// Set by `stop_current`; the running call checks it while it waits.
+    stop: AtomicBool,
 }
 
 impl CliRunner {
     pub fn new(workdir: PathBuf) -> Self {
-        Self { exe: find_claude(), workdir, timeout: Duration::from_secs(20 * 60) }
+        Self { exe: find_claude(), workdir, timeout: Duration::from_secs(20 * 60), stop: AtomicBool::new(false) }
     }
 
     pub fn with_exe(exe: PathBuf, workdir: PathBuf, timeout: Duration) -> Self {
-        Self { exe: Some(exe), workdir, timeout }
+        Self { exe: Some(exe), workdir, timeout, stop: AtomicBool::new(false) }
     }
 
     fn command(&self, exe: &Path) -> Command {
@@ -119,6 +122,11 @@ impl CliRunner {
             if let Some(st) = child.try_wait()? {
                 break st;
             }
+            if self.stop.swap(false, Ordering::SeqCst) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(RunError::Stopped);
+            }
             if start.elapsed() > self.timeout {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -176,6 +184,10 @@ impl ClaudeRunner for CliRunner {
         let args = Self::stage_args(req)?;
         let (_ok, stdout, stderr) = self.exec(exe, &args, &req.prompt)?;
         parse_envelope(&stdout, &stderr, req.tier.alias())
+    }
+
+    fn stop_current(&self) {
+        self.stop.store(true, Ordering::SeqCst);
     }
 }
 
@@ -241,9 +253,27 @@ mod tests {
 
     #[test]
     fn missing_exe_reports_not_installed() {
-        let r = CliRunner { exe: None, workdir: std::env::temp_dir(), timeout: Duration::from_secs(1) };
+        let r = CliRunner { exe: None, workdir: std::env::temp_dir(), timeout: Duration::from_secs(1), stop: AtomicBool::new(false) };
         assert!(!r.status().installed);
         assert!(matches!(r.run(&req(&[])), Err(RunError::NotInstalled)));
+    }
+
+    /// Pausing a course stops the call that's running instead of waiting minutes for it to finish.
+    #[cfg(windows)]
+    #[test]
+    fn stop_ends_a_running_call() {
+        let ping = PathBuf::from(std::env::var("SystemRoot").unwrap_or(r"C:\Windows".into())).join("System32").join("PING.EXE");
+        let r = CliRunner::with_exe(ping.clone(), std::env::temp_dir(), Duration::from_secs(60));
+        let start = Instant::now();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                std::thread::sleep(Duration::from_millis(400));
+                r.stop_current();
+            });
+            let out = r.exec(&ping, &["-n".into(), "30".into(), "127.0.0.1".into()], "");
+            assert!(matches!(out, Err(RunError::Stopped)), "{out:?}");
+        });
+        assert!(start.elapsed() < Duration::from_secs(10));
     }
 
     /// Real call against the local Claude Code install. Uses a little of the plan's usage, so it's opt-in:
