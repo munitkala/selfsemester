@@ -112,7 +112,16 @@ pub struct BuildSettings {
     /// What goes into the course. Independent of the level.
     #[serde(default)]
     pub content: Content,
+    /// Unit writers may search the web and open the reading list while they write, to check facts against
+    /// real sources. Slower and heavier, so only the Maximum level turns it on by itself.
+    #[serde(default)]
+    pub research: bool,
 }
+
+/// Added to a unit prompt when the writer may look things up.
+const RESEARCH_NOTE: &str = "\n\nRESEARCH: you may use web search and open the reading-list sources (or other \
+reliable pages) to check facts, definitions, current versions and examples before you write them. Use what you find \
+in your own words, and add every page you relied on to lesson.sources_used.";
 
 impl Default for BuildSettings {
     fn default() -> Self {
@@ -128,7 +137,8 @@ pub fn preset(level: Level) -> BuildSettings {
         Level::Thorough => (Tier::Opus, Tier::Opus, Tier::Sonnet, Some(Effort::High), 2, 15),
         Level::Max => (Tier::Fable, Tier::Fable, Tier::Opus, Some(Effort::Max), 3, 25),
     };
-    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources, content: Content::default() }
+    let research = level == Level::Max;
+    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources, content: Content::default(), research }
 }
 
 impl BuildSettings {
@@ -155,6 +165,10 @@ impl BuildSettings {
 
     pub fn for_unit(&self, req: &mut StageRequest, has_exam: bool) {
         self.set(req, if has_exam { self.exam_writer } else { self.writer });
+        if self.research && !req.tools.iter().any(|t| t == "WebSearch") {
+            req.tools.extend(["WebSearch".to_string(), "WebFetch".to_string()]);
+            req.prompt += RESEARCH_NOTE;
+        }
     }
 
     pub fn for_check(&self, req: &mut StageRequest) {
@@ -244,12 +258,15 @@ pub fn time_factor(b: &BuildSettings, kind: &str, exam_share: f64) -> f64 {
         "unit" => {
             let now = (1.0 - exam_share) * model_time(b.writer) + exam_share * model_time(b.exam_writer);
             let base = (1.0 - exam_share) * model_time(s.writer) + exam_share * model_time(s.exam_writer);
-            e * now / base
+            e * now / base * if b.research { RESEARCH_TIME } else { 1.0 }
         }
         "validate" => e * rel(b.checker, s.checker),
         _ => 1.0,
     }
 }
+
+/// Looking things up makes a unit step this much longer and heavier.
+const RESEARCH_TIME: f64 = 1.5;
 
 /// Share of units whose check finds a major problem each round (seen in test builds), used for expected rewrites.
 const REWRITE_RATE: f64 = 0.3;
@@ -292,7 +309,7 @@ fn cost(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> (f64, f64) 
     // Relative sizes: a reading list (with searches) ~ 1, a unit ~ 3, a check ~ 1.
     let usage = e
         * (model_weight(b.writer)
-            + drafts * 3.0 * s.unit_scale * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
+            + drafts * 3.0 * s.unit_scale * if b.research { RESEARCH_TIME } else { 1.0 } * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
             + drafts * (s.units as f64) * model_weight(b.checker));
     let exam_share = if s.units > 0 { exams / s.units as f64 } else { 0.0 };
     let f = |k: &str| time_factor(b, k, exam_share);
@@ -422,6 +439,10 @@ mod tests {
         assert_eq!((r.tier, r.effort), (Tier::Opus, Some(Effort::Max)));
         b.for_unit(&mut r, true);
         assert_eq!(r.tier, Tier::Fable);
+        assert_eq!(r.tools, ["WebSearch", "WebFetch"]);
+        assert!(r.prompt.contains("RESEARCH:"));
+        b.for_unit(&mut r, true);
+        assert_eq!(r.tools.len(), 2, "research is only added once");
         let args = crate::claude::cli::CliRunner::stage_args(&r).unwrap();
         let at = args.iter().position(|a| a == "--effort").unwrap();
         assert_eq!(args[at + 1], "max");

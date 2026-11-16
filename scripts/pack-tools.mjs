@@ -48,17 +48,33 @@ function transform(buf, how) {
   throw new Error(`unknown transform ${how}`);
 }
 
+/**
+ * A file's bytes. `from` is one of:
+ *   "<package>@<version>/<path>"  a file in a pinned npm package;
+ *   "repo:<path>"                 a file in this repository (our own code, such as tools/src/python-runner.js);
+ *   "https://..."                 a file at a fixed address, such as a licence at a tagged commit.
+ */
+async function source(from) {
+  if (from.startsWith("repo:")) return readFileSync(join(root, from.slice(5)));
+  if (from.startsWith("https://")) {
+    const r = await fetch(from);
+    if (!r.ok) throw new Error(`${from}: HTTP ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
+  const at = from.lastIndexOf("@");
+  const slash = from.indexOf("/", at);
+  const pkg = unpack(from.slice(0, slash));
+  const src = join(pkg, from.slice(slash + 1));
+  if (!existsSync(src)) throw new Error(`${from} isn't in the package`);
+  return readFileSync(src);
+}
+
 mkdirSync(out, { recursive: true });
 let total = 0;
 try {
   for (const tool of catalog.tools) {
     for (const f of tool.files ?? []) {
-      const at = f.from.lastIndexOf("@");
-      const slash = f.from.indexOf("/", at);
-      const pkg = unpack(f.from.slice(0, slash));
-      const src = join(pkg, f.from.slice(slash + 1));
-      if (!existsSync(src)) throw new Error(`${f.from} isn't in the package`);
-      const data = transform(readFileSync(src), f.transform);
+      const data = transform(await source(f.from), f.transform);
       writeFileSync(join(out, `${tool.id}--${f.name}`), data);
       f.sha256 = createHash("sha256").update(data).digest("hex");
       f.bytes = data.length;

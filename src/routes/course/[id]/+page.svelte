@@ -5,6 +5,7 @@
   import StrictnessChoice from "#lib/StrictnessChoice.svelte";
   import BuildChoice from "#lib/BuildChoice.svelte";
   import Materials from "#lib/Materials.svelte";
+  import Standards from "#lib/Standards.svelte";
   import Classroom from "#lib/Classroom.svelte";
   import ProgressBar from "#lib/Progress.svelte";
   import { day, pct, letter, statusLabel, stageLabel, when, whenAtEnd, todayIso, kindLabel, size } from "#lib/format.ts";
@@ -307,6 +308,10 @@
         {Object.entries(plan.weights).filter(([, w]) => w > 0).map(([k, w]) => `${kindLabel[k] ?? k} ${Math.round(w * 100)}%`).join(" · ")}
       </p>
     </section>
+
+    {#if plan.standards?.length}
+      <section class="card"><Standards {plan} /></section>
+    {/if}
 
     <form class="card" onsubmit={approve}>
       <h2>Enrol</h2>

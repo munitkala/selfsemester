@@ -39,6 +39,20 @@ pub struct Plan {
     /// Tools from tools/catalog.json the lessons would use; the review step offers to install missing ones.
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Official standards or learning outcomes the course must meet, read from the learner's materials (for
+    /// example a curriculum framework), each mapped to the units that teach it. Empty when there are none.
+    #[serde(default)]
+    pub standards: Vec<Standard>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Standard {
+    /// The identifier as the source writes it, e.g. "HS-ALG-PS-01".
+    pub id: String,
+    /// The full statement, word for word.
+    pub text: String,
+    /// Keys of the units that teach it.
+    pub units: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

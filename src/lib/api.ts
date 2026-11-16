@@ -120,6 +120,8 @@ export type Plan = {
   unsupported_inputs: string[];
   /** Tools the lessons would use (tools/catalog.json ids); missing ones are offered at review. */
   tools?: string[];
+  /** Standards from the learner's reference the course must meet, with the units that teach each. */
+  standards?: { id: string; text: string; units: string[] }[];
 };
 
 export type LatePolicy = { kind: "lock_zero" } | { kind: "penalty"; per_day: number; max_days: number };
@@ -139,6 +141,8 @@ export type BuildSettings = {
   rewrites: number;
   sources: number;
   content: BuildContent;
+  /** Unit writers may search the web and open sources while writing. */
+  research: boolean;
 };
 export type BuildEstimate = { calls_min: number; calls_max: number; usage_vs_standard: number; minutes: number };
 

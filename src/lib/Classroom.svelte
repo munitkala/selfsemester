@@ -13,6 +13,7 @@
   import KindIcon from "#lib/KindIcon.svelte";
   import Materials from "#lib/Materials.svelte";
   import ExtendCourse from "#lib/ExtendCourse.svelte";
+  import Standards from "#lib/Standards.svelte";
 
   let { c }: { c: CourseView } = $props();
 
@@ -292,6 +293,10 @@
           </tbody>
         </table>
       </div>
+
+      {#if c.plan?.standards?.length}
+        <Standards plan={c.plan} heading="h3" />
+      {/if}
 
       <h3>How you're graded</h3>
       <div class="weights">

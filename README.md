@@ -27,8 +27,11 @@ You can also write a course yourself in the **course builder**, with no Claude a
   own voice or synthesised notes when no recording exists
 - **Figures you can try**: sliders, small simulations and self-checking drills inside the lesson, each sealed off
   from the internet, your files and the rest of the app
-- **Tools you choose**: geometry, sheet music, 3D molecules and world maps for the subjects you study, picked after
-  installing or in Settings; a course that needs something more asks first
+- **Tools you choose**: geometry, sheet music, 3D molecules, world maps and a Python playground that runs real code
+  in the lesson, picked after installing or in Settings; a course that needs something more asks first
+- **Built to a set of standards**: add a curriculum framework or exam specification to a course's materials and the
+  plan lists every standard word for word, each unit is written and checked against its own, and the syllabus shows
+  which unit teaches each one
 - **Write your own course from documents you already have**: attach PDFs, Word files or slides to any lesson or
   piece of work, start with just one lesson, and add weeks, quizzes and exams while the course runs
 - **A classroom for every course**: home, weekly modules, syllabus, gradebook and your own materials
@@ -195,6 +198,20 @@ npm run check              # type-check the interface
 cd src-tauri
 cargo test                 # unit tests, including a simulated course from intake to transcript
 ```
+
+**A demo installer with a finished course in it:** build the course in a separate copy of the app (set
+`SELFSEMESTER_HOME` to an empty folder), then copy it out and bundle it:
+
+```powershell
+cd src-tauri
+$env:SS_DEMO_HOME = "<that folder>"; $env:SS_DEMO_COURSE = "<course id>"; $env:SS_DEMO_OUT = "demo"
+cargo test --lib -- --ignored make_demo
+cd ..
+npm run tauri build -- --bundles nsis --config src-tauri/tauri.demo.conf.json
+```
+
+The copy leaves out build logs, settings and anything submitted or marked. On a computer with no SelfSemester data,
+the demo opens the whole course at once, starting the day it's installed.
 
 Three tests call the real Claude Code and use plan usage, so they're skipped unless asked for:
 `cargo test -- --ignored live_haiku` (one tiny call),

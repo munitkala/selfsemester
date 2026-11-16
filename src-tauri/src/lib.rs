@@ -2,6 +2,7 @@ pub mod backup;
 pub mod claude;
 pub mod course;
 pub mod db;
+pub mod demo;
 pub mod paths;
 pub mod tools;
 pub mod widget;
@@ -574,6 +575,12 @@ fn open_folder(app: AppHandle, state: tauri::State<'_, AppState>, path: String) 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = AppPaths::standard().expect("standard folders");
+    // A demo build brings a finished course; on its first launch on a computer with no data, copy it in.
+    if let Some(demo) = demo::bundled()
+        && let Err(e) = demo::seed(&paths, &demo, chrono::Utc::now())
+    {
+        eprintln!("couldn't set up the demo course: {e}");
+    }
     paths.ensure().expect("create app folders");
     let version = env!("CARGO_PKG_VERSION").to_string();
     // back up (or restore) before this version opens and upgrades the database

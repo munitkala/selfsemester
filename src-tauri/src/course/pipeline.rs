@@ -364,7 +364,7 @@ pub fn delete(conn: &Connection, paths: &AppPaths, id: &str) -> Result<(), Strin
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::course::marking;
     use crate::course::schedule::{LatePolicy, Strictness, tick};
@@ -483,6 +483,27 @@ mod tests {
         let entries: i64 = conn.query_row("SELECT count(*) FROM transcript_entries", [], |r| r.get(0)).unwrap();
         assert_eq!(entries, 0);
         assert!(std::fs::read_to_string(archive.join("00 Course summary.md")).unwrap().contains("Lessons only"));
+    }
+
+    /// A course built all the way to active, in a database file under `dir` (for tests that need a real course).
+    pub(crate) fn built_course(dir: &std::path::Path) -> (AppPaths, Connection, String) {
+        let paths = AppPaths::rooted(dir, dir);
+        paths.ensure().unwrap();
+        let conn = db::open(&paths.db_file()).unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = create(&conn, "Quantum mechanics 1", "").unwrap();
+        answer(&conn, &paths, &sealer, json!({"questions":[]}));
+        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
+        let start = Utc::now().date_naive() + Duration::days(3);
+        approve(&conn, &id, start, &LatePolicy::LockZero, Strictness::Structured, true, &BuildSettings::default()).unwrap();
+        answer(&conn, &paths, &sealer, json!({"sources":[]}));
+        answer(&conn, &paths, &sealer, unit_json("u01", false));
+        answer(&conn, &paths, &sealer, unit_json("u02", true));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        assert_eq!(status(&conn, &id), "active");
+        (paths, conn, id)
     }
 
     #[test]

@@ -5,6 +5,17 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "Next",
+    date: "",
+    title: "Courses built to a set of standards",
+    notes: [
+      "Add a standards document to a course's materials and the plan lists every standard, word for word, with the units that teach it.",
+      "Each unit is written and checked against its standards; the syllabus shows a Standards covered table.",
+      "Python playground: run real Python inside lessons, sealed off from the internet and your files.",
+      "Maximum builds look facts up online while writing each unit.",
+    ],
+  },
+  {
     version: "0.7.1",
     date: "2026-11-15",
     title: "Build a course your way",

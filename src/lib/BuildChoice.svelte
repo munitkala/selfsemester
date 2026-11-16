@@ -37,7 +37,7 @@
     quick: { name: "Quick", text: "Sonnet writes everything at low effort and Haiku checks it. No rewrites and a short reading list. The fastest build and the lightest on your plan." },
     standard: { name: "Standard", text: "Sonnet writes the lessons, Opus writes units with a test or exam, and Haiku checks every unit. A unit is rewritten once if its check finds a real mistake." },
     thorough: { name: "Thorough", text: "Opus writes everything at high effort and Sonnet checks it. Up to two rewrites and a longer reading list." },
-    max: { name: "Maximum", text: "Fable writes everything at the highest effort and Opus checks it. Up to three rewrites and the longest reading list. The slowest build and the heaviest on your plan; it can take several usage windows." },
+    max: { name: "Maximum", text: "Fable writes everything at the highest effort and Opus checks it. Up to three rewrites, the longest reading list, and each unit is checked against real sources online while it's written. The slowest build and the heaviest on your plan; it can take several usage windows." },
   };
   const models: { id: Model; name: string }[] = [
     { id: "haiku", name: "Haiku (fastest, lightest)" },
@@ -149,6 +149,7 @@
         <label>Most sources to find
           <input type="number" min="2" max="30" bind:value={value.sources} />
         </label>
+        <label class="radio wide"><input type="checkbox" bind:checked={value.research} /> <span>Look things up online while writing each unit</span></label>
       </div>
     {/if}
 
@@ -195,6 +196,10 @@
   }
   .custom input {
     max-width: 6rem;
+  }
+  .custom .wide {
+    flex-direction: row;
+    grid-column: 1 / -1;
   }
   .work {
     gap: 0.4rem 1.2rem;

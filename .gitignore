@@ -11,3 +11,6 @@ vite.config.ts.timestamp-*
 
 # Built by scripts/pack-tools.mjs, uploaded to a GitHub release
 tools-dist/
+
+# A finished course for a demo installer (see src-tauri/tauri.demo.conf.json)
+src-tauri/demo/

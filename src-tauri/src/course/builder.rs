@@ -310,6 +310,7 @@ fn compile(d: &Draft) -> (Plan, Vec<(String, UnitContent)>) {
         domain_family: "manual".into(),
         unsupported_inputs: vec![],
         tools: vec![],
+        standards: vec![],
     };
     (plan, contents)
 }
