@@ -311,6 +311,7 @@ fn compile(d: &Draft) -> (Plan, Vec<(String, UnitContent)>) {
         unsupported_inputs: vec![],
         tools: vec![],
         standards: vec![],
+        unbuilt: vec![],
     };
     (plan, contents)
 }

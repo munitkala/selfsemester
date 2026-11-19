@@ -43,6 +43,10 @@ pub struct Plan {
     /// example a curriculum framework), each mapped to the units that teach it. Empty when there are none.
     #[serde(default)]
     pub standards: Vec<Standard>,
+    /// Weeks that were planned but left out because building was ended early with only the weeks that were
+    /// ready (`pipeline::finish_with_ready`). Kept so the syllabus and standards table can show what's missing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unbuilt: Vec<PlanUnit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

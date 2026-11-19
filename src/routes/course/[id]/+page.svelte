@@ -8,7 +8,8 @@
   import Standards from "#lib/Standards.svelte";
   import Classroom from "#lib/Classroom.svelte";
   import ProgressBar from "#lib/Progress.svelte";
-  import { day, pct, letter, statusLabel, stageLabel, when, whenAtEnd, todayIso, kindLabel, size } from "#lib/format.ts";
+  import BuildControls from "#lib/BuildControls.svelte";
+  import { day, pct, letter, statusLabel, when, todayIso, kindLabel, size } from "#lib/format.ts";
 
   const id = $derived(page.params.id ?? "");
   let c = $state<CourseView | null>(null);
@@ -101,9 +102,6 @@
     goto("/courses");
   }
 
-  const working = $derived(c && (c.jobs.running > 0 || c.jobs.queued > 0));
-  // Being built by Claude, so it can be paused.
-  const building = $derived(!!c && ["intake", "scoping", "compiling"].includes(c.status));
   const textOnly = $derived(!!build && !build.content.media);
   const lessonsOnly = $derived(
     !!build && !!c?.plan && Object.entries(c.plan.weights).every(([k, w]) => w <= 0 || build!.content.skip.includes(k)),
@@ -155,23 +153,7 @@
     </div>
   {/if}
 
-  {#if c.paused}
-    <div class="note row">
-      <span>Building is paused. Nothing is sent to Claude for this course until you carry on; any step that was cut short starts again.</span>
-      <button onclick={() => act(() => api.continueCourse(id))} disabled={busy}>Continue building</button>
-    </div>
-  {:else if c.jobs.waiting_usage}
-    <div class="note row">
-      <span>Paused because your Claude plan's usage limit was reached. It tries again automatically at {whenAtEnd(c.jobs.next_attempt_at)}. If your limit has already reset, resume now.</span>
-      <button onclick={() => act(() => api.resume(id))} disabled={busy}>Resume now</button>
-      {#if building}<button class="ghost" onclick={() => act(() => api.pauseCourse(id))} disabled={busy}>Pause building</button>{/if}
-    </div>
-  {:else if working}
-    <div class="note info row">
-      <span><span class="spinner" aria-hidden="true"></span> {c.jobs.running_kind ? `Claude is ${stageLabel[c.jobs.running_kind] ?? "working"}…` : "Waiting for the next step to start…"} You can leave this page; it carries on in the background.</span>
-      {#if building}<button class="ghost" onclick={() => act(() => api.pauseCourse(id))} disabled={busy}>Pause building</button>{/if}
-    </div>
-  {/if}
+  <BuildControls {c} {busy} {act} />
   {#if c.progress}
     <ProgressBar p={c.progress} />
   {/if}
@@ -348,13 +330,17 @@
       <div class="build-meter" role="progressbar" aria-valuemin="0" aria-valuemax={c.units.length} aria-valuenow={unitsDone} aria-label="Units written and checked">
         <span style="width: {c.units.length ? (100 * unitsDone) / c.units.length : 0}%"></span>
       </div>
-      <p class="muted">{c.sources.length ? `${c.sources.length} sources found. ` : "Finding free sources first. "}{unitsDone} of {c.units.length} units written and checked.</p>
+      <p class="muted">
+        {c.sources.length ? `${c.sources.length} sources found. ` : "Finding free sources first. "}{unitsDone} of {c.units.length} units written and checked.
+        Weeks are built one at a time, in order, so you can end building whenever you like and keep the weeks that are ready.
+      </p>
       <ul class="units">
-        {#each c.units as u}
+        {#each c.units as u, i}
+          {@const current = u.state !== "validated" && c.units.slice(0, i).every((x) => x.state === "validated")}
           <li>
             <span>Week {u.week}: {u.title}</span>
             <span class="pill {u.state === 'validated' ? 'done' : u.state === 'generated' ? 'submitted' : ''}">
-              {u.state === "validated" ? "Ready" : u.state === "generated" ? "Checking" : "Waiting"}
+              {u.state === "validated" ? "Ready" : u.state === "generated" ? "Checking" : !current || !c.sources.length ? "Waiting" : c.paused || c.jobs.waiting_usage ? "Next" : "Writing"}
             </span>
           </li>
         {/each}

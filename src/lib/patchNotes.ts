@@ -5,10 +5,14 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
-    version: "Next",
-    date: "",
-    title: "Courses built to a set of standards",
+    version: "0.8.0",
+    date: "2026-11-19",
+    title: "Build one week at a time",
     notes: [
+      "Courses are built one week at a time, so whatever is finished is always a usable start of the course.",
+      "Pause after the current step (nothing wasted) or right away; continue whenever you like.",
+      "Before you continue, see how many weeks, Claude calls and how much Claude time are left, with a usage warning.",
+      "End building early and start the course with the weeks that are ready; the rest are listed as not built.",
       "Add a standards document to a course's materials and the plan lists every standard, word for word, with the units that teach it.",
       "Each unit is written and checked against its standards; the syllabus shows a Standards covered table.",
       "Python playground: run real Python inside lessons, sealed off from the internet and your files.",

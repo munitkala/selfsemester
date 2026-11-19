@@ -6,11 +6,17 @@
   let { plan, heading = "h2" }: { plan: Plan; heading?: "h2" | "h3" } = $props();
 
   const standards = $derived(plan.standards ?? []);
+  const built = (key: string) => plan.units.some((x) => x.key === key);
   const unitTitle = (key: string) => {
     const u = plan.units.find((x) => x.key === key);
-    return u ? `Week ${u.week}: ${u.title}` : null;
+    if (u) return `Week ${u.week}: ${u.title}`;
+    // A week left out when building was ended early.
+    const n = (plan.unbuilt ?? []).find((x) => x.key === key);
+    return n ? `Week ${n.week}: ${n.title} (not built)` : null;
   };
   const uncovered = $derived(standards.filter((s) => !s.units.some((k) => unitTitle(k))));
+  // Taught only in weeks that weren't built.
+  const notBuilt = $derived(standards.filter((s) => s.units.some((k) => unitTitle(k)) && !s.units.some(built)));
   let filter = $state("");
   const shown = $derived(
     filter.trim()
@@ -23,10 +29,16 @@
   <svelte:element this={heading}>Standards covered</svelte:element>
   <p class="small muted">
     {standards.length} {standards.length === 1 ? "standard" : "standards"} from your reference, each with the units that teach it.
-    {#if !uncovered.length}Every one is taught by at least one unit.{/if}
+    {#if !uncovered.length && !notBuilt.length}Every one is taught by at least one unit.{/if}
   </p>
   {#if uncovered.length}
     <p class="note">Not taught by any unit yet: {uncovered.map((s) => s.id).join(", ")}.</p>
+  {/if}
+  {#if notBuilt.length}
+    <p class="note">
+      {notBuilt.length} of {standards.length} {standards.length === 1 ? "standard is" : "standards are"} taught only in weeks that
+      weren't built, because building was ended early. They're listed so you can see the whole plan.
+    </p>
   {/if}
   {#if standards.length > 8}
     <input class="filter" type="search" placeholder="Find a standard" bind:value={filter} aria-label="Find a standard" />

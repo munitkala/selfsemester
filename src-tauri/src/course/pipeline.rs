@@ -178,6 +178,123 @@ fn unit_attempts(conn: &Connection, id: &str, key: &str) -> Result<i64, String> 
         .map_err(io)
 }
 
+fn compiling(conn: &Connection, id: &str) -> Result<bool, String> {
+    let s: Option<String> = conn.query_row("SELECT status FROM courses WHERE id=?1", [id], |r| r.get(0)).optional().map_err(io)?;
+    Ok(s.as_deref() == Some("compiling"))
+}
+
+/// Queue a draft of one unit (a rewrite when `feedback` holds the check's major problems).
+fn queue_unit(conn: &Connection, paths: &AppPaths, id: &str, key: &str, feedback: Option<&str>) -> Result<(), String> {
+    let plan = plan_of(conn, id)?;
+    let srcs = sources_of(conn, id)?;
+    let build = super::build::of_course(conn, id)?;
+    let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
+    let mut req = prompts::unit_styled(&plan, &srcs, key, feedback, &tool_guide, &build.content);
+    build.for_unit(&mut req, plan.units.iter().any(|u| u.key == key && u.exam != "none"));
+    materials::attach(conn, id, &mut req, materials::Use::Write)?;
+    jobs::enqueue_with(conn, Some(id), "unit", Some(key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
+    Ok(())
+}
+
+/// Courses are built one week at a time, in order, so that whatever is finished is a usable start of the course
+/// (see `finish_with_ready`). Queue the first unit that isn't written yet, unless a unit or check of this course
+/// is already waiting or running (courses started by an older version queued every unit at once).
+fn queue_next_unit(conn: &Connection, paths: &AppPaths, id: &str) -> Result<(), String> {
+    let busy: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM jobs WHERE course_id=?1 AND kind IN ('unit','validate') AND status IN ('queued','running','waiting_usage')",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(io)?;
+    if busy > 0 {
+        return Ok(());
+    }
+    let next: Option<String> = conn
+        .query_row("SELECT unit_key FROM units WHERE course_id=?1 AND state='pending' ORDER BY week, seq LIMIT 1", [id], |r| r.get(0))
+        .optional()
+        .map_err(io)?;
+    match next {
+        Some(key) => queue_unit(conn, paths, id, &key, None),
+        None => Ok(()),
+    }
+}
+
+/// How far a course being built has got: the weeks at the start of the course that are written and checked (so
+/// it could be finished with just those), and how many weeks are planned.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct Readiness {
+    /// Units ready to use, counted from the first one up to the first that isn't.
+    pub ready_units: usize,
+    /// Last week those cover (0 when none is ready).
+    pub ready_weeks: u32,
+    pub total_units: usize,
+    pub total_weeks: u32,
+}
+
+/// Keys of the leading units (in course order) that are written and checked.
+fn ready_prefix(conn: &Connection, id: &str) -> Result<Vec<(String, u32)>, String> {
+    let mut st = conn.prepare("SELECT unit_key, week, state FROM units WHERE course_id=?1 ORDER BY week, seq").map_err(io)?;
+    let rows: Vec<(String, u32, String)> =
+        st.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(io)?.collect::<Result<_, _>>().map_err(io)?;
+    Ok(rows.into_iter().take_while(|(_, _, s)| s == "validated").map(|(k, w, _)| (k, w)).collect())
+}
+
+pub fn readiness(conn: &Connection, id: &str) -> Result<Readiness, String> {
+    let ready = ready_prefix(conn, id)?;
+    let (total_units, total_weeks): (i64, Option<i64>) = conn
+        .query_row("SELECT count(*), max(week) FROM units WHERE course_id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(io)?;
+    Ok(Readiness {
+        ready_units: ready.len(),
+        ready_weeks: ready.iter().map(|(_, w)| *w).max().unwrap_or(0),
+        total_units: total_units as usize,
+        total_weeks: total_weeks.unwrap_or(0).max(0) as u32,
+    })
+}
+
+/// End building early and start the course with only the weeks that are ready (the leading units that are
+/// written and checked). Everything still to build is dropped: queued steps are cancelled, the plan keeps the
+/// left-out weeks in `unbuilt` so the syllabus can show them, and grade weights spread over the work that's left.
+/// Returns the notice, and whether a step was running (the caller should stop that Claude call).
+pub fn finish_with_ready(conn: &Connection, paths: &AppPaths, sealer: &Sealer, id: &str) -> Result<(schedule::Notice, bool), String> {
+    if !compiling(conn, id)? {
+        return Err("Only a course that's being built can be finished early.".into());
+    }
+    let ready = ready_prefix(conn, id)?;
+    if ready.is_empty() {
+        return Err("No week is ready yet. Pause building instead, or wait until the first week has been written and checked.".into());
+    }
+    let running: i64 = conn
+        .query_row(
+            &format!("SELECT count(*) FROM jobs WHERE course_id=?1 AND status='running' AND kind IN {}", jobs::BUILD_KINDS),
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(io)?;
+    conn.execute(
+        &format!(
+            "UPDATE jobs SET status='cancelled', updated_at=?2 WHERE course_id=?1 AND kind IN {} AND status IN ('queued','running','waiting_usage')",
+            jobs::BUILD_KINDS
+        ),
+        params![id, db::now_utc()],
+    )
+    .map_err(io)?;
+    let keep: Vec<&str> = ready.iter().map(|(k, _)| k.as_str()).collect();
+    let mut plan = plan_of(conn, id)?;
+    let (kept, dropped): (Vec<PlanUnit>, Vec<PlanUnit>) = plan.units.drain(..).partition(|u| keep.contains(&u.key.as_str()));
+    plan.units = kept;
+    plan.unbuilt.extend(dropped);
+    plan.pacing.total_weeks = plan.units.iter().map(|u| u.week.max(1)).max().unwrap_or(1);
+    conn.execute("UPDATE courses SET plan_json=?2 WHERE id=?1", params![id, serde_json::to_string(&plan).unwrap()]).map_err(io)?;
+    let marks = keep.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let mut args: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    args.extend(keep.iter().map(|k| k as &dyn rusqlite::ToSql));
+    conn.execute(&format!("DELETE FROM units WHERE course_id=?1 AND unit_key NOT IN ({marks})"), args.as_slice()).map_err(io)?;
+    let notice = seal_and_start(conn, paths, sealer, id)?;
+    Ok((notice, running > 0))
+}
+
 /// A job finished successfully: store its result and queue what comes next.
 /// Returns a notice for the learner when something worth a toast happened.
 pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id: i64, model: &str) -> Result<Option<schedule::Notice>, String> {
@@ -212,17 +329,10 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
                 )
                 .map_err(io)?;
             }
-            let plan = plan_of(conn, &id)?;
-            let srcs = sources_of(conn, &id)?;
-            let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
-            let build = super::build::of_course(conn, &id)?;
-            for u in &plan.units {
-                let mut req = prompts::unit_styled(&plan, &srcs, &u.key, None, &tool_guide, &build.content);
-                build.for_unit(&mut req, u.exam != "none");
-                materials::attach(conn, &id, &mut req, materials::Use::Write)?;
-                jobs::enqueue_with(conn, Some(&id), "unit", Some(&u.key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
-            }
+            // One week at a time: write the first, and each check that passes queues the next.
+            queue_next_unit(conn, paths, &id)?;
         }
+        "unit" | "validate" if !compiling(conn, &id)? => {} // ended early or deleted meanwhile: nothing more to do
         "unit" => {
             let key = unit_key.ok_or("unit job without unit")?;
             let content: UnitContent = serde_json::from_value(value).map_err(|e| e.to_string())?;
@@ -241,13 +351,8 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             let major: Vec<&Issue> = v.issues.iter().filter(|i| i.severity == "major").collect();
             let build = super::build::of_course(conn, &id)?;
             if !major.is_empty() && unit_attempts(conn, &id, &key)? < 1 + build.rewrites as i64 {
-                let plan = plan_of(conn, &id)?;
-                let srcs = sources_of(conn, &id)?;
                 let fb = major.iter().map(|i| format!("- {} {}: {}", i.item_key, i.question_id, i.problem)).collect::<Vec<_>>().join("\n");
-                let mut req = prompts::unit_styled(&plan, &srcs, &key, Some(&fb), &crate::tools::lesson_guide(&crate::tools::installed(paths)), &build.content);
-                build.for_unit(&mut req, plan.units.iter().any(|u| u.key == key && u.exam != "none"));
-                materials::attach(conn, &id, &mut req, materials::Use::Write)?;
-                jobs::enqueue_with(conn, Some(&id), "unit", Some(&key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
+                queue_unit(conn, paths, &id, &key, Some(&fb))?;
                 conn.execute("UPDATE units SET state='pending' WHERE course_id=?1 AND unit_key=?2", params![id, key]).map_err(io)?;
                 return Ok(None);
             }
@@ -263,6 +368,7 @@ pub fn on_job_done(conn: &Connection, paths: &AppPaths, sealer: &Sealer, job_id:
             if left == 0 {
                 return seal_and_start(conn, paths, sealer, &id).map(Some);
             }
+            queue_next_unit(conn, paths, &id)?;
         }
         "review" => {
             let item = unit_key.ok_or("review job without item")?;
@@ -432,10 +538,10 @@ pub(crate) mod tests {
         assert!(queued("unit").iter().all(|(m, _)| m == "sonnet"));
         assert!(queued("unit")[0].1.contains("runs in a sealed frame")); // figures stay on by default
         answer(&conn, &paths, &sealer, unit_json("u01", false));
-        answer(&conn, &paths, &sealer, unit_json("u02", true));
         assert!(queued("validate").iter().all(|(m, _)| m == "haiku"));
         // No rewrites on Quick: a major issue is kept as a warning instead.
         answer(&conn, &paths, &sealer, json!({"ok":false,"issues":[{"item_key":"u01-quiz","question_id":"q1","problem":"wrong","severity":"major"}]}));
+        answer(&conn, &paths, &sealer, unit_json("u02", true));
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
         assert_eq!(queued("unit").len(), 2);
         assert_eq!(status(&conn, &id), "active");
@@ -470,8 +576,8 @@ pub(crate) mod tests {
         assert!(!prompt.contains("runs in a sealed frame"));
         let lesson = |k: &str| json!({"lesson":{"title": format!("Lesson {k}"),"markdown":"Text","est_minutes":30,"sources_used":[]},"items":[]});
         answer(&conn, &paths, &sealer, lesson("u01"));
-        answer(&conn, &paths, &sealer, lesson("u02"));
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        answer(&conn, &paths, &sealer, lesson("u02"));
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
         assert_eq!(status(&conn, &id), "active");
         let graded: i64 = conn.query_row("SELECT count(*) FROM items WHERE course_id=?1 AND kind!='lesson'", [&id], |r| r.get(0)).unwrap();
@@ -499,11 +605,109 @@ pub(crate) mod tests {
         approve(&conn, &id, start, &LatePolicy::LockZero, Strictness::Structured, true, &BuildSettings::default()).unwrap();
         answer(&conn, &paths, &sealer, json!({"sources":[]}));
         answer(&conn, &paths, &sealer, unit_json("u01", false));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        answer(&conn, &paths, &sealer, unit_json("u02", true));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        assert_eq!(status(&conn, &id), "active");
+        (paths, conn, id)
+    }
+
+    /// A course approved and its reading list found, ready to write units.
+    fn compiling_course(paths: &AppPaths, conn: &Connection, sealer: &Sealer, build: &BuildSettings) -> String {
+        let id = create(conn, "Quantum mechanics 1", "").unwrap();
+        answer(conn, paths, sealer, json!({"questions":[]}));
+        answer_intake(conn, &id, &json!({})).unwrap();
+        answer(conn, paths, sealer, crate::course::prompts::tests::sample_plan());
+        approve(conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, build).unwrap();
+        answer(conn, paths, sealer, json!({"sources":[]}));
+        id
+    }
+
+    #[test]
+    fn finish_early_keeps_the_ready_weeks_and_drops_the_rest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
+        paths.ensure().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = compiling_course(&paths, &conn, &sealer, &BuildSettings::default());
+        // Nothing ready yet: it can't be finished, only paused.
+        assert!(finish_with_ready(&conn, &paths, &sealer, &id).unwrap_err().contains("No week is ready"));
+        answer(&conn, &paths, &sealer, unit_json("u01", false));
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[{"item_key":"u01-hw","question_id":"h1","problem":"minor","severity":"minor"}]}));
+        // Week 2 is being written when building is ended.
+        let (u02, _) = jobs::claim_next(&conn, Utc::now()).unwrap().unwrap();
+        let (_, running) = finish_with_ready(&conn, &paths, &sealer, &id).unwrap();
+        assert!(running, "the caller is told to stop the call in progress");
+        assert_eq!(status(&conn, &id), "active");
+        let plan = plan_of(&conn, &id).unwrap();
+        assert_eq!(plan.units.iter().map(|u| u.key.as_str()).collect::<Vec<_>>(), ["u01"]);
+        assert_eq!(plan.unbuilt.iter().map(|u| u.key.as_str()).collect::<Vec<_>>(), ["u02"]);
+        assert_eq!(plan.pacing.total_weeks, 1);
+        let units: i64 = conn.query_row("SELECT count(*) FROM units WHERE course_id=?1", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(units, 1);
+        // Only week 1's work is scheduled, and the dropped final exam's share moves to what's left.
+        let kinds: Vec<String> = {
+            let mut st = conn.prepare("SELECT DISTINCT kind FROM items WHERE course_id=?1 ORDER BY kind").unwrap();
+            st.query_map([&id], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(kinds, ["homework", "lesson", "quiz"]);
+        let w: f64 = conn.query_row("SELECT sum(weight) FROM items WHERE course_id=?1", [&id], |r| r.get(0)).unwrap();
+        assert!((w - 1.0).abs() < 1e-9, "{w}");
+        // The stopped week-2 call comes back late: it stays cancelled and nothing more is queued or written.
+        let out = crate::claude::StageOutput { value: unit_json("u02", true), usage: Default::default(), model: "m".into() };
+        jobs::finish(&conn, u02, "m", &Ok(out), Utc::now()).unwrap();
+        let st: String = conn.query_row("SELECT status FROM jobs WHERE id=?1", [u02], |r| r.get(0)).unwrap();
+        assert_eq!(st, "cancelled");
+        assert!(jobs::claim_next(&conn, Utc::now()).unwrap().is_none());
+        // A finished course can't be finished early again.
+        assert!(finish_with_ready(&conn, &paths, &sealer, &id).is_err());
+    }
+
+    #[test]
+    fn pause_after_the_step_keeps_its_result_and_holds_the_next_week() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
+        paths.ensure().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = compiling_course(&paths, &conn, &sealer, &BuildSettings::default());
+        let (job, _) = jobs::claim_next(&conn, Utc::now()).unwrap().unwrap();
+        assert!(pause(&conn, &id).unwrap(), "a step of this course is running");
+        // Not stopped: the draft finishes and is stored, and its check is queued but held.
+        let out = crate::claude::StageOutput { value: unit_json("u01", false), usage: Default::default(), model: "m".into() };
+        jobs::finish(&conn, job, "m", &Ok(out), Utc::now()).unwrap();
+        on_job_done(&conn, &paths, &sealer, job, "m").unwrap();
+        let state: String = conn.query_row("SELECT state FROM units WHERE course_id=?1 AND unit_key='u01'", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(state, "generated");
+        assert!(jobs::claim_next(&conn, Utc::now()).unwrap().is_none(), "held while paused");
+        let left = crate::course::build::remaining(&conn, &id).unwrap();
+        assert_eq!((left.units_left, left.calls_min, left.calls_max), (2, 3, 7));
+        assert!(!left.heavy);
+        unpause(&conn, &id).unwrap();
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
+        let next: String = conn
+            .query_row("SELECT unit_key FROM jobs WHERE course_id=?1 AND status='queued'", [&id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(next, "u02");
+    }
+
+    #[test]
+    fn a_course_from_an_older_version_with_every_unit_queued_gets_no_duplicates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::rooted(&tmp.path().join("l"), &tmp.path().join("d"));
+        paths.ensure().unwrap();
+        let conn = db::open_in_memory().unwrap();
+        let sealer = Sealer::load(&conn).unwrap();
+        let id = compiling_course(&paths, &conn, &sealer, &BuildSettings::default());
+        queue_unit(&conn, &paths, &id, "u02", None).unwrap(); // as 0.7 did: every unit queued after sources
+        answer(&conn, &paths, &sealer, unit_json("u01", false));
         answer(&conn, &paths, &sealer, unit_json("u02", true));
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
         answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]}));
         assert_eq!(status(&conn, &id), "active");
-        (paths, conn, id)
+        let drafts: i64 = conn.query_row("SELECT count(*) FROM jobs WHERE course_id=?1 AND kind='unit'", [&id], |r| r.get(0)).unwrap();
+        assert_eq!(drafts, 2);
     }
 
     #[test]
@@ -529,12 +733,19 @@ pub(crate) mod tests {
         assert_eq!(status(&conn, &id), "compiling");
         answer(&conn, &paths, &sealer, json!({"sources":[{"url":"https://openstax.org/x","title":"OpenStax","licence":"CC BY 4.0",
             "attribution":"OpenStax","free":true,"unit_keys":["u01","u02"],"note":""}]}));
-        // Two unit jobs, then a validation per unit. u01 validation reports a major issue once -> regenerated.
+        // One week at a time: u01, its check (a major issue -> rewritten, checked again), then u02 and its check.
+        let queued_units = || -> i64 {
+            conn.query_row("SELECT count(*) FROM jobs WHERE course_id=?1 AND kind='unit' AND status='queued'", [&id], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(queued_units(), 1, "only the first week is queued");
         answer(&conn, &paths, &sealer, unit_json("u01", false));
-        answer(&conn, &paths, &sealer, unit_json("u02", true));
+        assert_eq!(queued_units(), 0, "the next week waits for this one's check");
         answer(&conn, &paths, &sealer, json!({"ok":false,"issues":[{"item_key":"u01-quiz","question_id":"q1","problem":"wrong","severity":"major"}]}));
-        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]})); // u02 validated
-        answer(&conn, &paths, &sealer, unit_json("u01", false)); // regenerated u01
+        answer(&conn, &paths, &sealer, unit_json("u01", false)); // rewritten u01
+        assert_eq!(readiness(&conn, &id).unwrap().ready_units, 0);
+        answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]})); // u01 validated
+        assert_eq!(readiness(&conn, &id).unwrap(), Readiness { ready_units: 1, ready_weeks: 1, total_units: 2, total_weeks: 2 });
+        answer(&conn, &paths, &sealer, unit_json("u02", true));
         let n = answer(&conn, &paths, &sealer, json!({"ok":true,"issues":[]})).expect("course ready notice");
         assert!(n.title.contains("ready"));
         assert_eq!(status(&conn, &id), "active");

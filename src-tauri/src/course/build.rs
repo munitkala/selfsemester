@@ -347,6 +347,74 @@ pub fn estimate(conn: &Connection, id: &str, b: &BuildSettings) -> Result<Estima
     Ok(estimate_shape(&b, &shape, &planned, &secs))
 }
 
+/// What carrying on with a course that's being built will still use, shown before the learner continues it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Remaining {
+    pub level: Level,
+    /// Units (weeks) still to write and check.
+    pub units_left: u32,
+    pub calls_min: u32,
+    pub calls_max: u32,
+    /// Expected minutes of Claude work left.
+    pub minutes: f64,
+    /// Usage of what's left compared with a Standard build of the whole course (1.0 = the same).
+    pub usage_vs_standard: f64,
+    /// Minutes of Claude work each finished week of this course took, when at least one is done.
+    pub minutes_per_week_so_far: Option<f64>,
+    /// Effort, research or models that use plan usage quickly: worth a stronger warning.
+    pub heavy: bool,
+}
+
+pub fn remaining(conn: &Connection, id: &str) -> Result<Remaining, String> {
+    let b = of_course(conn, id)?;
+    let ready = super::pipeline::readiness(conn, id)?;
+    let states: Vec<String> = {
+        let mut st = conn.prepare("SELECT state FROM units WHERE course_id=?1").map_err(|e| e.to_string())?;
+        st.query_map([id], |r| r.get(0)).map_err(|e| e.to_string())?.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    let pending = states.iter().filter(|s| *s == "pending").count() as u32;
+    let checking = states.iter().filter(|s| *s == "generated").count() as u32;
+    let sources_left = conn
+        .query_row("SELECT count(*) FROM jobs WHERE course_id=?1 AND kind='sources' AND status='done'", [id], |r| r.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?
+        == 0;
+    let r = b.rewrites as u32;
+    let src = u32::from(sources_left);
+    let whole = estimate(conn, id, &b)?;
+    let left = pending + checking;
+    let share = if ready.total_units > 0 { left as f64 / ready.total_units as f64 } else { 1.0 };
+    let minutes = super::progress::course(conn, id, chrono::Utc::now())
+        .map_err(|e| e.to_string())?
+        .map(|p| p.remaining_secs / 60.0)
+        .unwrap_or(whole.minutes * share);
+    let done_secs: Option<f64> = conn
+        .query_row(
+            "SELECT sum(c.duration_ms) / 1000.0 FROM claude_calls c JOIN jobs j ON j.id = c.job_id
+             WHERE j.course_id=?1 AND j.kind IN ('unit','validate') AND c.outcome='ok'",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let validated = states.iter().filter(|s| *s == "validated").count();
+    let per_week = done_secs.filter(|_| validated > 0).map(|s| s / 60.0 / validated as f64);
+    // Once a week of this course is done, its own pace is the best guide (typical step times are scaled for the
+    // build level, which would count a heavy level twice when the history is already from this course).
+    let minutes = match per_week {
+        Some(w) => w * (pending as f64 + 0.3 * checking as f64) + if sources_left { minutes.min(30.0) } else { 0.0 },
+        None => minutes,
+    };
+    Ok(Remaining {
+        level: b.level,
+        units_left: left,
+        calls_min: src + 2 * pending + checking,
+        calls_max: src + 2 * pending * (1 + r) + checking * (1 + 2 * r),
+        minutes,
+        usage_vs_standard: whole.usage_vs_standard * share,
+        minutes_per_week_so_far: per_week,
+        heavy: b.research || matches!(b.effort, Some(Effort::Xhigh | Effort::Max)) || whole.usage_vs_standard >= 2.0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

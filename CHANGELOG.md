@@ -5,6 +5,30 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.8.0 (2026-11-19)
+
+### Build one week at a time, and stop when you like
+
+**Why:** a long course at a high build level can take many hours of Claude work and several of your plan's usage
+windows. You should be able to stop at any point without losing what's done, see what carrying on will use before
+you do, and start studying the weeks that are finished without waiting for the rest.
+
+- Courses are now built one week at a time, in order: a week is written, then checked (and rewritten if the check
+  finds major problems), and only then does the next week start. Whatever is finished is always a usable start of
+  the course. The build page shows which week is being written.
+- **Pause building** now asks how: **Pause after this step** (the step Claude is on finishes and is kept, so none of
+  your plan's usage is wasted) or **Pause now** (the step is stopped and starts over later).
+- **Continue building** first shows what's left: how many weeks, the number of Claude calls, the expected Claude
+  time (and how long each week took so far), how that compares with a Standard build, and a warning about usage
+  limits. Heavy builds (high effort, web research or the largest models) get a stronger warning.
+- **End building** starts the course now with the weeks that are ready and drops the rest. The syllabus lists the
+  dropped weeks as planned but not built, the standards table marks standards taught only in those weeks, and grades
+  are shared across the work that's left. It's offered while building, when paused and while waiting for a usage
+  limit to reset.
+- Courses that were being built by an older version carry on as before, without any week being queued twice.
+
 ### Courses built to a set of standards
 
 **Why:** a course meant to meet a curriculum framework or exam specification should follow that document, not

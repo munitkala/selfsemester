@@ -122,6 +122,8 @@ export type Plan = {
   tools?: string[];
   /** Standards from the learner's reference the course must meet, with the units that teach each. */
   standards?: { id: string; text: string; units: string[] }[];
+  /** Weeks that were planned but not built, because building was ended early with the weeks that were ready. */
+  unbuilt?: { key: string; title: string; week: number; topics: string[]; exam: string }[];
 };
 
 export type LatePolicy = { kind: "lock_zero" } | { kind: "penalty"; per_day: number; max_days: number };
@@ -145,6 +147,20 @@ export type BuildSettings = {
   research: boolean;
 };
 export type BuildEstimate = { calls_min: number; calls_max: number; usage_vs_standard: number; minutes: number };
+
+export type Readiness = { ready_units: number; ready_weeks: number; total_units: number; total_weeks: number };
+
+/** What carrying on with a course that's being built will still use. */
+export type Remaining = {
+  level: string;
+  units_left: number;
+  calls_min: number;
+  calls_max: number;
+  minutes: number;
+  usage_vs_standard: number;
+  minutes_per_week_so_far: number | null;
+  heavy: boolean;
+};
 
 export type CourseView = {
   id: string;
@@ -173,6 +189,8 @@ export type CourseView = {
   meta: CourseMeta;
   /** building is paused by the learner */
   paused: boolean;
+  /** While building: weeks at the start of the course that are ready, so it can be finished with just those. */
+  readiness: Readiness | null;
 };
 
 export type Material = { id: string; kind: "file" | "image" | "note"; name: string; path: string; bytes: number; added_at: string };
@@ -301,7 +319,10 @@ export const api = {
     invoke<void>("approve_course", { id, enrol: { startDate, latePolicy, strictness, onTranscript, build } }),
   buildLevels: () => invoke<{ presets: BuildSettings[]; last: BuildSettings }>("build_levels"),
   buildEstimate: (id: string, build: BuildSettings) => invoke<BuildEstimate>("build_estimate", { id, build }),
-  pauseCourse: (id: string) => invoke<void>("pause_course", { id }),
+  /** `now` stops the step in progress (what it used is lost); otherwise it finishes and then building waits. */
+  pauseCourse: (id: string, now = false) => invoke<void>("pause_course", { id, now }),
+  finishEarly: (id: string) => invoke<void>("finish_course_early", { id }),
+  buildRemaining: (id: string) => invoke<Remaining>("build_remaining", { id }),
   continueCourse: (id: string) => invoke<void>("continue_course", { id }),
   retry: (id: string) => invoke<number>("retry_course", { id }),
   remove: (id: string) => invoke<void>("delete_course", { id }),
