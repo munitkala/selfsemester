@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 
 # Built by scripts/pack-tools.mjs, uploaded to a GitHub release
 tools-dist/
+/dist

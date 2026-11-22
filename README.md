@@ -2,8 +2,8 @@
 
 # SelfSemester
 
-A Windows desktop app that turns any subject into a full university-style course: lessons, homework, quizzes,
-assignments and exams, released on a schedule with hard deadlines and real marks.
+A desktop app for Windows and Linux that turns any subject into a full university-style course: lessons, homework,
+quizzes, assignments and exams, released on a schedule with hard deadlines and real marks.
 
 You name a subject. Claude asks a few questions about your goals and level, plans a syllabus, and tells you how well
 it can teach and mark that subject before you commit. Once you approve, it writes the whole course up front, with
@@ -64,11 +64,13 @@ Version 0.5.0 added figures in lessons, themes, an Insights page, clearer feedba
 | What | Details |
 | --- | --- |
 | Windows 10 or 11, 64-bit | Uses Microsoft Edge WebView2, which Windows 11 already has (the installer adds it on Windows 10 if needed). |
+| Linux, 64-bit | Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch or openSUSE 15.5+, with WebKitGTK 4.1 and GTK 3. |
 | [Claude Code](https://claude.com/claude-code) | Installed and signed in **with a Claude subscription** (Pro or Max). SelfSemester runs your own copy of Claude Code; there's no API key to enter. |
 | Internet | Needed while a course is being built, while lesson sounds or tools are being downloaded, and whenever work is marked. Reading lessons and doing work happen offline. |
 
-To build from source instead of downloading the installer, you also need Node.js 22.17+, Rust 1.85+ and the Visual
-Studio C++ build tools (see [Install](#install)).
+To build from source instead of downloading the installer, you also need Node.js 22.17+ and Rust 1.85+. On Windows,
+install the Visual Studio C++ build tools; on Linux, install the WebKitGTK 4.1 and GTK 3 development packages
+(see [Install](#install)).
 
 ## Before you use it
 
@@ -125,6 +127,8 @@ Courses you write in the course builder never leave your computer, unless you as
 | `Documents\SelfSemester\Completed` | Archives of finished courses: summary, lesson notes, your work, feedback, reference list |
 | `Documents\SelfSemester\Backups` | Safety copies of your data, made before each update (the last 5 are kept) |
 
+On Linux these folders are `~/.local/share/SelfSemester` and `~/Documents/SelfSemester`.
+
 ## Legal and responsible use
 
 Read [`DISCLAIMER.md`](DISCLAIMER.md) before using SelfSemester; the app also asks you to accept its key points the
@@ -141,11 +145,12 @@ first time it opens. In short:
   requests and submitted work are sent to Anthropic.
 - **Academic integrity.** If you're at a school or university, follow its rules on AI tools.
 - **Back up your data.** Everything lives on your computer, and nobody else can recover it. SelfSemester copies it
-  to `Documents\SelfSemester\Backups` before each update, but keep your own copy somewhere else too.
+  to its Backups folder (`Documents\SelfSemester\Backups` on Windows, `~/Documents/SelfSemester/Backups` on Linux)
+  before each update, but keep your own copy somewhere else too.
 
 ## Install
 
-### Download the installer (easiest)
+### Download the installer (Windows, easiest)
 
 1. Go to the [latest release](https://github.com/munitkala/selfsemester/releases/latest) and download
    `SelfSemester_<version>_x64-setup.exe` under **Assets**.
@@ -167,9 +172,32 @@ the newest backup by itself when it starts. **Settings → Your data and backups
 **Uninstalling:** use **Settings → Apps → Installed apps** in Windows. Your data in `%LOCALAPPDATA%\SelfSemester`
 and `Documents\SelfSemester` stays until you delete it yourself.
 
+### Download a Linux build
+
+On the same [release page](https://github.com/munitkala/selfsemester/releases/latest), download
+`SelfSemester-<version>-linux-x86_64.zip`. It holds the `.deb`, `.rpm` and AppImage packages, a plain executable
+and checksums.
+
+1. **Debian, Ubuntu or Linux Mint:** `sudo apt install ./SelfSemester_<version>_amd64.deb`, then run
+   `selfsemester` from your applications menu or a terminal.
+2. **Fedora, RHEL, Rocky, Alma or openSUSE:** `sudo dnf install ./SelfSemester-<version>-1.x86_64.rpm`, then run
+   `selfsemester`. On openSUSE use `sudo zypper install` instead.
+3. **Any distribution (AppImage):** make it executable with `chmod +x SelfSemester_<version>_amd64.AppImage`, then
+   run it. AppImages need FUSE 2; if your distribution only has FUSE 3, install `libfuse2` (`libfuse2t64` on
+   Ubuntu 24.04 and later) or run it with `--appimage-extract-and-run`.
+4. **Plain executable:** make it executable with `chmod +x SelfSemester`, then run `./SelfSemester`. It uses the
+   WebKitGTK 4.1 and GTK 3 already on your computer.
+
+The `.deb` and `.rpm` add a desktop-menu entry; the AppImage and plain executable don't. To check a download, unzip
+the `.sha256.zip` next to it and run `sha256sum -c SHA256SUMS.txt`. Updating means installing the newer package or
+replacing the AppImage; your data stays in `~/.local/share/SelfSemester` and `~/Documents/SelfSemester`.
+
+If the window stays blank on a computer with NVIDIA graphics, start the app with
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` (or, with an older WebKitGTK, `WEBKIT_DISABLE_COMPOSITING_MODE=1`).
+
 ### Or build it yourself
 
-You need Node.js 22.17+, Rust 1.85+ and the Visual Studio C++ build tools.
+You need Node.js 22.17+ and Rust 1.85+. On Windows, also install the Visual Studio C++ build tools.
 
 ```powershell
 git clone https://github.com/munitkala/selfsemester.git
@@ -180,6 +208,19 @@ npm run tauri build -- --bundles nsis
 
 The installer is written to `src-tauri\target\release\bundle\nsis\`. Run it the same way as above.
 
+On Linux, install the development packages first (the full list is in `.github/workflows/rust.yml`):
+
+```bash
+sudo apt install build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+  libjavascriptcoregtk-4.1-dev librsvg2-dev libssl-dev libayatana-appindicator3-dev
+git clone https://github.com/munitkala/selfsemester.git
+cd selfsemester
+npm install
+npm run tauri build -- --bundles deb,rpm,appimage
+```
+
+The packages are written to `src-tauri/target/release/bundle/`.
+
 ### Then connect Claude Code
 
 Courses you write yourself in the course builder work without this. For courses Claude writes and marks, install
@@ -188,7 +229,10 @@ Then in SelfSemester open **Settings** and press **Run test**.
 
 ## Development
 
-```powershell
+The same commands work in a terminal on Linux, after installing the development packages listed under
+[Or build it yourself](#or-build-it-yourself).
+
+```
 npm install
 npm run tauri dev          # run the app with hot reload
 npm run check              # type-check the interface

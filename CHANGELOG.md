@@ -3,6 +3,22 @@
 What changed in each version of SelfSemester, newest first. Changes that haven't been given a version number yet
 are listed under **Unreleased**.
 
+## Unreleased
+
+### Runs on Linux
+
+**Why:** courses, marking and the interface never needed Windows, but the app was only built and checked there.
+
+- SelfSemester now builds and runs on 64-bit Linux. Each release includes a `.deb` for Debian, Ubuntu and Linux
+  Mint, an `.rpm` for Fedora, RHEL, Rocky, Alma and openSUSE, an AppImage for any distribution, and a plain
+  executable. They run on Ubuntu 22.04+, Debian 12+, Fedora 36+ and other current distributions with WebKitGTK 4.1.
+- On a Linux computer that hasn't set up a Documents folder, the app now uses `~/Documents` instead of refusing to
+  start.
+- Claude Code is found in the places Linux installs usually put it, including npm, pnpm, Bun and Volta folders.
+- On Linux, computer voices use `espeak-ng` when it's installed.
+- The checks and tests now run on Linux as well as Windows, so a Windows-only change can't slip back in.
+- Settings no longer assumes Windows in the text about voices, animation and backups.
+
 ## 0.7.1 (2026-11-15)
 
 ### Choose what a course includes (issue #4)

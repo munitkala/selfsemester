@@ -15,7 +15,8 @@
 
 ### Future / Unscheduled (When I get to it)
 - [ ] Sample course showcase (pre-packaged example curricula demonstrating assignments, rubrics, and feedback loops)
-- [ ] Cross-platform support (Mac and Linux binaries/builds)
+- [x] Linux support (deb, rpm, AppImage and plain binaries)
+- [ ] macOS support (binaries/builds)
 - [ ] One-click application installer & environment bootstrapper (standalone setup without manual setup prerequisites)
 - [ ] Active recall study modes & flashcard integration
 - [ ] Exportable syllabus & transcript generation (PDF / Markdown exports)
