@@ -822,7 +822,11 @@ fn fill(course_dir: &Path, clip: &Clip, net: Option<&dyn Net>, voice: &dyn Voice
     }
     f.status = "missing".into();
     f.note = if speech {
-        format!("No free recording was found, and this computer has no voice for {lang}. Windows can add one in Settings, Time and language, Speech.")
+        if cfg!(windows) {
+            format!("No free recording was found, and this computer has no voice for {lang}. Windows can add one in Settings, Time and language, Speech.")
+        } else {
+            format!("No free recording was found, and this computer has no voice for {lang}. Install espeak-ng and a voice for it, then try again.")
+        }
     } else {
         "No freely licensed recording was found.".into()
     };

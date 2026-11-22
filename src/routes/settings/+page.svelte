@@ -120,8 +120,8 @@
   </p>
   <label class="radio"><input type="checkbox" checked={soundsOnline} onchange={(e) => setSoundsOnline(e.currentTarget.checked)} /> Find recordings on Wikimedia Commons</label>
   <p class="small muted">
-    With this off, only computer voices and made notes are used. To add a voice for a language, open Windows
-    Settings, then Time and language, then Speech.
+    With this off, only computer voices and made notes are used. To add a voice for a language, use your computer's
+    speech settings: on Windows, Settings, Time and language, Speech; on Linux, install <code>espeak-ng</code>.
   </p>
 </section>
 
@@ -182,9 +182,9 @@
   </div>
   <p class="small muted">
     Updating SelfSemester never touches your courses: the installer only replaces the program. On top of that, before a new
-    version opens your data for the first time, the app copies your database and every course's files to
-    <code>Documents\SelfSemester\Backups</code>. If it ever starts and finds your data missing, it puts the newest backup
-    back by itself. The last 5 backups are kept.
+    version opens your data for the first time, the app copies your database and every course's files to the Backups
+    folder in <code>{status?.user_dir ?? "Documents/SelfSemester"}</code>. If it ever starts and finds your data
+    missing, it puts the newest backup back by itself. The last 5 backups are kept.
   </p>
   {#if status?.startup.problem}<p class="note bad">The backup at start-up didn't work: {status.startup.problem}</p>{/if}
   {#if status?.startup.result?.kind === "backed_up"}<p class="small good">Version {status.startup.version} backed up your data before its first start.</p>{/if}

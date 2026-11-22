@@ -49,7 +49,7 @@
   <h2><Icon name="sun" size={18} /> Appearance</h2>
 
   <div class="setting">
-    <div class="name">Mode<span class="hint">System follows Windows' light or dark setting.</span></div>
+    <div class="name">Mode<span class="hint">System follows your computer's light or dark setting.</span></div>
     {@render seg("mode", [{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }], "Mode")}
   </div>
 
@@ -143,7 +143,7 @@
     </div>
   </div>
   <div class="setting">
-    <div class="name">Animation<span class="hint">System follows Windows' "Animation effects" setting. Minimal effects also turns animation off.</span></div>
+    <div class="name">Animation<span class="hint">System follows your computer's animation setting. Minimal effects also turns animation off.</span></div>
     {@render seg("motion", [{ value: "system", label: "System" }, { value: "on", label: "On" }, { value: "off", label: "Off" }], "Animation")}
   </div>
   {@render toggle("celebrate", "Celebrate goals", "A small flourish on Today when you reach your daily goal.")}
