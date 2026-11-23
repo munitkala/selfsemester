@@ -14,7 +14,10 @@ report it the same way. See [DISCLAIMER.md](DISCLAIMER.md) for how course conten
 
 ## Working on the code
 
-You need Node.js 22.17+, Rust 1.85+ and the Visual Studio C++ build tools on Windows.
+You need Node.js 22.17+ and Rust 1.85+. On Windows, also install the Visual Studio C++ build tools. On Linux, install
+the WebKitGTK 4.1 and GTK 3 development packages; the list the build uses is in `.github/workflows/rust.yml`.
+
+The commands below work in PowerShell on Windows and in a terminal on Linux.
 
 ```powershell
 npm install

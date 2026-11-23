@@ -19,7 +19,7 @@ labels: bug
 **Version and setup**
 
 - SelfSemester version (Settings, at the bottom of "Your data and backups"):
-- Windows 10 or 11:
+- Operating system and version (for example Windows 11 or Ubuntu 24.04):
 - Course type (written by Claude or in the course builder, Structured or Sandbox):
 
 Please leave out anything private, such as your submitted work, account details or other people's names.

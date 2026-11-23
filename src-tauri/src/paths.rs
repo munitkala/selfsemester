@@ -1,7 +1,8 @@
 //! Where SelfSemester keeps things on disk.
 //!
-//! App internals (database, sealed exams, downloads, logs) live in `%LOCALAPPDATA%\SelfSemester`.
-//! Anything meant for the learner (transcript, completed-course archives) lives in `Documents\SelfSemester`.
+//! App internals (database, sealed exams, downloads, logs) live in the system's local app data folder:
+//! `%LOCALAPPDATA%\SelfSemester` on Windows, `~/.local/share/SelfSemester` on Linux.
+//! Anything meant for the learner (transcript, completed-course archives) lives in `Documents/SelfSemester`.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -10,15 +11,26 @@ pub const APP_DIR_NAME: &str = "SelfSemester";
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AppPaths {
-    /// `%LOCALAPPDATA%\SelfSemester`
+    /// `%LOCALAPPDATA%\SelfSemester` on Windows, `~/.local/share/SelfSemester` on Linux
     pub data_dir: PathBuf,
-    /// `Documents\SelfSemester`
+    /// `Documents/SelfSemester`
     pub user_dir: PathBuf,
 }
 
+/// The learner's Documents folder. On Linux, desktops that haven't set up user folders report none, so use
+/// `~/Documents` instead of refusing to start.
+fn documents_dir() -> Option<PathBuf> {
+    pick_documents(dirs::document_dir(), dirs::home_dir())
+}
+
+/// `document` when the desktop knows it, otherwise `home/Documents`. Split out so it can be tested.
+fn pick_documents(document: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    document.or_else(|| home.map(|home| home.join("Documents")))
+}
+
 impl AppPaths {
-    /// Standard Windows locations, or everything under `SELFSEMESTER_HOME` when that's set (for a separate test or
-    /// demo copy that mustn't touch real courses).
+    /// Standard locations for the system, or everything under `SELFSEMESTER_HOME` when that's set (for a separate
+    /// test or demo copy that mustn't touch real courses).
     pub fn standard() -> io::Result<Self> {
         if let Some(home) = std::env::var_os("SELFSEMESTER_HOME").filter(|h| !h.is_empty()) {
             let home = Path::new(&home);
@@ -26,7 +38,7 @@ impl AppPaths {
         }
         let local = dirs::data_local_dir()
             .ok_or_else(|| io::Error::other("could not find the local app data folder"))?;
-        let docs = dirs::document_dir()
+        let docs = documents_dir()
             .ok_or_else(|| io::Error::other("could not find the Documents folder"))?;
         Ok(Self::rooted(&local, &docs))
     }
@@ -95,6 +107,16 @@ impl AppPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn documents_falls_back_to_home() {
+        // Linux desktops without user folders configured report no Documents folder.
+        let home = PathBuf::from("home").join("learner");
+        let chosen = PathBuf::from("custom").join("Docs");
+        assert_eq!(pick_documents(None, Some(home.clone())), Some(home.join("Documents")));
+        assert_eq!(pick_documents(Some(chosen.clone()), Some(home)), Some(chosen));
+        assert_eq!(pick_documents(None, None), None);
+    }
 
     #[test]
     fn creates_layout() {

@@ -14,3 +14,4 @@ tools-dist/
 
 # A finished course for a demo installer (see src-tauri/tauri.demo.conf.json)
 src-tauri/demo/
+/dist

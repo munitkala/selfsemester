@@ -30,7 +30,7 @@ impl CliRunner {
     }
 
     fn command(&self, exe: &Path) -> Command {
-        let mut cmd = Command::new(exe);
+        let mut cmd = crate::course::audio::system_command(exe);
         cmd.current_dir(&self.workdir).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {
@@ -211,7 +211,15 @@ pub fn find_claude() -> Option<PathBuf> {
     if let Some(home) = dirs::home_dir() {
         dirs.push(home.join(".local").join("bin"));
         dirs.push(home.join(".claude").join("local"));
+        // npm, Bun and Volta installs on Linux and macOS. A window opened from the desktop often has a shorter
+        // PATH than a terminal, so these may not be on it.
+        #[cfg(not(windows))]
+        for rel in [".npm-global/bin", ".local/share/npm/bin", ".local/share/pnpm", ".bun/bin", ".volta/bin"] {
+            dirs.push(home.join(rel));
+        }
     }
+    #[cfg(not(windows))]
+    dirs.extend([PathBuf::from("/usr/local/bin"), PathBuf::from("/usr/bin")]);
     if let Some(appdata) = std::env::var_os("APPDATA") {
         dirs.push(PathBuf::from(appdata).join("npm"));
     }

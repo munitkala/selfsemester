@@ -1,6 +1,7 @@
 name: Release installer
 
-# Builds the Windows installer on a clean GitHub machine and attaches it to the release, with a SHA-256 checksum.
+# Builds the Windows installer and the Linux packages on clean GitHub machines, and attaches them to the release
+# with SHA-256 checksums.
 # Runs for every version tag (v1.2.3), or by hand for an existing tag.
 on:
   push:
@@ -65,3 +66,91 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: gh release upload $env:TAG "$env:INSTALLER" "$env:INSTALLER.sha256" --clobber
+
+  linux:
+    # Built on 22.04 so the executable runs on glibc 2.35 and newer (Ubuntu 22.04+, Debian 12+, Fedora 36+).
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        ref: ${{ env.TAG }}
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install Linux build libraries
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y \
+          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev librsvg2-dev libssl-dev \
+          libayatana-appindicator3-dev desktop-file-utils \
+          patchelf file rpm zip unzip zsync libfuse2
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
+    - name: Build and pack
+      env:
+        APPIMAGE_EXTRACT_AND_RUN: "1"
+      run: |
+        set -euo pipefail
+        version="$(node -p "require('./package.json').version")"
+        arch="$(uname -m)"
+        case "$arch" in
+          x86_64) deb_arch=amd64 ;;
+          aarch64) deb_arch=arm64 ;;
+          *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+        esac
+
+        npm ci --no-audit --no-fund
+        npm run build
+        # The Tauri CLI passes tauri/custom-protocol; without it the app opens the dev server URL
+        # instead of the interface bundled into the binary.
+        (cd src-tauri && cargo build --release --locked --features tauri/custom-protocol)
+
+        stage="$RUNNER_TEMP/stage"
+        mkdir -p "$stage"
+        # Copy the plain executable before bundling, because the bundler patches the build in place.
+        cp src-tauri/target/release/selfsemester "$stage/SelfSemester"
+        npx tauri bundle --bundles deb,rpm,appimage --ci
+        cp src-tauri/target/release/bundle/deb/*.deb "$stage/"
+        cp src-tauri/target/release/bundle/rpm/*.rpm "$stage/"
+        cp src-tauri/target/release/bundle/appimage/*.AppImage "$stage/"
+        cp LICENSE "$stage/LICENSE"
+        sed \
+          -e "s/@VERSION@/${version}/g" \
+          -e "s/@DEB_ARCH@/${deb_arch}/g" \
+          -e "s/@RPM_ARCH@/${arch}/g" \
+          -e "s/@ZIP_ARCH@/${arch}/g" \
+          scripts/linux/artifact-readme.txt > "$stage/README.txt"
+        chmod 755 "$stage/SelfSemester" "$stage"/*.AppImage
+
+        base="SelfSemester-${version}-linux-${arch}"
+        (cd "$stage" && zip -X -9 -q "$RUNNER_TEMP/$base.zip" *)
+
+        hashes="$RUNNER_TEMP/hashes"
+        mkdir -p "$hashes"
+        (cd "$stage" && sha256sum * > "$hashes/SHA256SUMS.txt")
+        (cd "$stage" && for f in *; do sha256sum "$f" > "$hashes/$f.sha256"; done)
+        (cd "$hashes" && zip -X -9 -q "$RUNNER_TEMP/$base.sha256.zip" *)
+
+        echo "LINUX_ZIP=$RUNNER_TEMP/$base.zip" >> "$GITHUB_ENV"
+        echo "LINUX_SUMZIP=$RUNNER_TEMP/$base.sha256.zip" >> "$GITHUB_ENV"
+
+    - name: Make sure the release exists
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        if ! gh release view "$TAG" >/dev/null 2>&1; then
+          gh release create "$TAG" --title "SelfSemester ${TAG#v}" --notes "See CHANGELOG.md." || true
+        fi
+
+    - name: Attach to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release upload "$TAG" "$LINUX_ZIP" "$LINUX_SUMZIP" --clobber

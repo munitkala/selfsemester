@@ -289,8 +289,9 @@ fixed widths of earlier versions are still available under Settings, Layout, Pag
 
 ## Themes
 
-Choose light, dark or follow Windows, then a theme for each and any accent colour. Every theme was checked for WCAG
-AA contrast; dark themes use dark grey rather than pure black, and Paper is a sepia theme for long reading.
+Choose light, dark or follow your computer's setting, then a theme for each and any accent colour. Every theme was
+checked for WCAG AA contrast; dark themes use dark grey rather than pure black, and Paper is a sepia theme for long
+reading.
 
 | | | |
 | --- | --- | --- |

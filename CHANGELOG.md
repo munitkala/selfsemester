@@ -5,7 +5,21 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-Nothing yet.
+### Runs on Linux
+
+**Why:** courses, marking and the interface never needed Windows, but the app was only built and checked there.
+
+- SelfSemester now builds and runs on 64-bit Linux. Each release includes a `.deb` for Debian, Ubuntu and Linux
+  Mint, an `.rpm` for Fedora, RHEL, Rocky, Alma and openSUSE, an AppImage for any distribution, and a plain
+  executable. They run on Ubuntu 22.04+, Debian 12+, Fedora 36+ and other current distributions with WebKitGTK 4.1.
+- On a Linux computer that hasn't set up a Documents folder, the app now uses `~/Documents` instead of refusing to
+  start.
+- Claude Code is found in the places Linux installs usually put it, including npm, pnpm, Bun and Volta folders.
+- On Linux, computer voices use `espeak-ng` when it's installed.
+- From the AppImage, the extra tools now install instead of failing with a `libnghttp2` error: helper programs
+  such as `curl` run with the system's libraries rather than the ones the AppImage carries.
+- The checks and tests now run on Linux as well as Windows, so a Windows-only change can't slip back in.
+- Settings no longer assumes Windows in the text about voices, animation and backups.
 
 ## 0.8.0 (2026-11-19)
 

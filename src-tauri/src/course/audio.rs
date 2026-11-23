@@ -229,6 +229,18 @@ pub(crate) fn system_tool(windows_rel: &str, other: &str) -> PathBuf {
     }
 }
 
+/// A command for a program outside the app (curl, espeak-ng, Claude Code). An AppImage puts its own libraries
+/// first in `LD_LIBRARY_PATH`, and a system program that inherits it can load an older copy and fail to start
+/// (curl did, through libnghttp2). Helpers should use the system's libraries, not the app's.
+pub(crate) fn system_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    if cfg!(target_os = "linux") {
+        cmd.env_remove("LD_LIBRARY_PATH");
+        cmd.env_remove("LD_PRELOAD");
+    }
+    cmd
+}
+
 /// Downloads through the system's own curl (part of Windows 10 and later, macOS and Linux), so the app needs no
 /// HTTP library. Requests are spaced out, as Wikimedia asks of automated clients.
 pub struct Curl {
@@ -250,7 +262,7 @@ impl Net for Curl {
         std::thread::sleep(Duration::from_millis(800));
         std::fs::create_dir_all(&self.tmp_dir).map_err(|e| NetError::Failed(e.to_string()))?;
         let tmp = self.tmp_dir.join(format!("audio-{}.part", std::process::id()));
-        let mut cmd = std::process::Command::new(system_tool(r"System32\curl.exe", "curl"));
+        let mut cmd = system_command(system_tool(r"System32\curl.exe", "curl"));
         cmd.args(["-sS", "-L", "--proto", "=https", "--max-time", "60", "--max-filesize"])
             .arg(MAX_BYTES.to_string())
             .args(["-A", &self.user_agent, "-o"])
@@ -308,7 +320,7 @@ impl Voice for SystemVoice {
             let text_file = self.tmp_dir.join("speak.txt");
             std::fs::write(&script, WINDOWS_TTS).map_err(|e| e.to_string())?;
             std::fs::write(&text_file, text).map_err(|e| e.to_string())?;
-            let mut cmd = std::process::Command::new(system_tool(r"System32\WindowsPowerShell\v1.0\powershell.exe", "powershell"));
+            let mut cmd = system_command(system_tool(r"System32\WindowsPowerShell\v1.0\powershell.exe", "powershell"));
             cmd.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
                 .arg(&script)
                 .args(["-Lang", lang, "-TextFile"])
@@ -327,7 +339,7 @@ impl Voice for SystemVoice {
             return Err(String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("speech failed").to_string());
         }
         if cfg!(target_os = "macos") {
-            let list = std::process::Command::new("say").args(["-v", "?"]).output().map_err(|e| e.to_string())?;
+            let list = system_command("say").args(["-v", "?"]).output().map_err(|e| e.to_string())?;
             let want = lang.replace('-', "_").to_ascii_lowercase();
             let prefix = want.split('_').next().unwrap_or("").to_string();
             let voices = String::from_utf8_lossy(&list.stdout).to_string();
@@ -340,7 +352,7 @@ impl Voice for SystemVoice {
                 })
             };
             let Some(name) = pick(true).or_else(|| pick(false)) else { return Ok(None) };
-            let o = std::process::Command::new("say")
+            let o = system_command("say")
                 .args(["-v", &name, "--file-format=WAVE", "--data-format=LEI16@22050", "-o"])
                 .arg(out)
                 .arg(text)
@@ -348,7 +360,7 @@ impl Voice for SystemVoice {
                 .map_err(|e| e.to_string())?;
             return if o.status.success() { Ok(Some(name)) } else { Err("speech failed".into()) };
         }
-        match std::process::Command::new("espeak-ng").args(["-v", lang, "-w"]).arg(out).arg(text).output() {
+        match system_command("espeak-ng").args(["-v", lang, "-w"]).arg(out).arg(text).output() {
             Ok(o) if o.status.success() => Ok(Some(format!("espeak-ng ({lang})"))),
             _ => Ok(None),
         }
@@ -822,7 +834,11 @@ fn fill(course_dir: &Path, clip: &Clip, net: Option<&dyn Net>, voice: &dyn Voice
     }
     f.status = "missing".into();
     f.note = if speech {
-        format!("No free recording was found, and this computer has no voice for {lang}. Windows can add one in Settings, Time and language, Speech.")
+        if cfg!(windows) {
+            format!("No free recording was found, and this computer has no voice for {lang}. Windows can add one in Settings, Time and language, Speech.")
+        } else {
+            format!("No free recording was found, and this computer has no voice for {lang}. Install espeak-ng and a voice for it, then try again.")
+        }
     } else {
         "No freely licensed recording was found.".into()
     };
@@ -927,6 +943,16 @@ mod tests {
         Text.\n\n```audio\n{\"test\": true, \"lang\": \"zh-CN\", \"clips\": [{\"say\": \"马\", \"romanization\": \"mǎ\"}]}\n```\n\n\
         ```audio\n[{\"notes\": [\"C4\", \"E4\", \"G4\"], \"chord\": true, \"label\": \"C major\"}]\n```\n\n\
         ```audio\nnot json\n```\n\n```audio\n[{\"sound\": \"European robin song\"}]\n```\n";
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn helper_programs_ignore_the_appimage_library_path() {
+        // The AppImage prepends its own libraries; system programs must not inherit them.
+        let cmd = system_command("curl");
+        let removed = |name: &str| cmd.get_envs().any(|(k, v)| k == name && v.is_none());
+        assert!(removed("LD_LIBRARY_PATH"));
+        assert!(removed("LD_PRELOAD"));
+    }
 
     #[test]
     fn reads_blocks_and_numbers_clips_like_the_ui() {
