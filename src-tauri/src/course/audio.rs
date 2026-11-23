@@ -234,8 +234,7 @@ pub(crate) fn system_tool(windows_rel: &str, other: &str) -> PathBuf {
 /// (curl did, through libnghttp2). Helpers should use the system's libraries, not the app's.
 pub(crate) fn system_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
     let mut cmd = std::process::Command::new(program);
-    #[cfg(target_os = "linux")]
-    {
+    if cfg!(target_os = "linux") {
         cmd.env_remove("LD_LIBRARY_PATH");
         cmd.env_remove("LD_PRELOAD");
     }
