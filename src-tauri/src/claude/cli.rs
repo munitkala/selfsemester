@@ -30,7 +30,7 @@ impl CliRunner {
     }
 
     fn command(&self, exe: &Path) -> Command {
-        let mut cmd = Command::new(exe);
+        let mut cmd = crate::course::audio::system_command(exe);
         cmd.current_dir(&self.workdir).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {

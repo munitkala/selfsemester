@@ -195,7 +195,10 @@ impl Source for Release {
     fn fetch(&self, release: &str, id: &str, file: &ToolFile) -> Result<Vec<u8>, String> {
         let url = format!("https://github.com/munitkala/selfsemester/releases/download/{release}/{id}--{}", file.name);
         let tmp = std::env::temp_dir().join(format!("selfsemester-tool-{}-{id}.part", std::process::id()));
-        let mut cmd = std::process::Command::new(crate::course::audio::system_tool(r"System32\curl.exe", "curl"));
+        let mut cmd = crate::course::audio::system_command(crate::course::audio::system_tool(
+            r"System32\curl.exe",
+            "curl",
+        ));
         cmd.args(["-sS", "-L", "--fail", "--proto", "=https", "--proto-redir", "=https", "--max-time", "120", "--max-filesize"])
             .arg(MAX_FILE.to_string())
             .args(["-A", &format!("SelfSemester/{} (https://github.com/munitkala/selfsemester; tools)", env!("CARGO_PKG_VERSION")), "-o"])

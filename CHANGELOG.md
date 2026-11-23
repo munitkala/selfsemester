@@ -16,6 +16,8 @@ are listed under **Unreleased**.
   start.
 - Claude Code is found in the places Linux installs usually put it, including npm, pnpm, Bun and Volta folders.
 - On Linux, computer voices use `espeak-ng` when it's installed.
+- From the AppImage, the extra tools now install instead of failing with a `libnghttp2` error: helper programs
+  such as `curl` run with the system's libraries rather than the ones the AppImage carries.
 - The checks and tests now run on Linux as well as Windows, so a Windows-only change can't slip back in.
 - Settings no longer assumes Windows in the text about voices, animation and backups.
 
