@@ -5,6 +5,17 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "0.8.1",
+    date: "2026-11-23",
+    title: "Runs on Linux",
+    notes: [
+      "SelfSemester now runs on 64-bit Linux, with a .deb, an .rpm, an AppImage and a plain executable in each release.",
+      "Claude Code is found in the usual Linux install folders, and computer voices use espeak-ng.",
+      "On a Linux computer without a Documents folder set up, the app uses ~/Documents instead of refusing to start.",
+      "Settings no longer assumes Windows when it talks about voices, animation and backups.",
+    ],
+  },
+  {
     version: "0.8.0",
     date: "2026-11-19",
     title: "Build one week at a time",

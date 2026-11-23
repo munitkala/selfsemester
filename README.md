@@ -13,7 +13,7 @@ of handwritten working back to Claude for marking against a rubric. Final marks 
 
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it the same way.
 
-> **Status: early (0.8.0).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.8.1).** It works end to end but has had little real-world use. Expect rough edges.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
 
@@ -52,6 +52,8 @@ by the app and all the themes.
 
 ## What's new
 
+Version 0.8.1 runs on Linux as well as Windows: each release now has a `.deb`, an `.rpm`, an AppImage and a
+plain executable next to the Windows installer.
 Version 0.8.0 builds a course one week at a time, so you can pause whenever you like (after the current step, so
 nothing is wasted), see what carrying on will use of your Claude plan before you continue, or end building early and
 start the course with the weeks that are ready. It also builds courses to a set of standards you supply (a curriculum

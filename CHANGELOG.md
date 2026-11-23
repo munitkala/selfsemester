@@ -5,7 +5,11 @@ are listed under **Unreleased**.
 
 ## Unreleased
 
-### Runs on Linux
+Nothing yet.
+
+## 0.8.1 (2026-11-23)
+
+### Runs on Linux (issue #5)
 
 **Why:** courses, marking and the interface never needed Windows, but the app was only built and checked there.
 
@@ -20,6 +24,7 @@ are listed under **Unreleased**.
   such as `curl` run with the system's libraries rather than the ones the AppImage carries.
 - The checks and tests now run on Linux as well as Windows, so a Windows-only change can't slip back in.
 - Settings no longer assumes Windows in the text about voices, animation and backups.
+- Thanks to mufasa-noir, who wrote the Linux support (pull request #6).
 
 ## 0.8.0 (2026-11-19)
 
