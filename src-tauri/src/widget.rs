@@ -21,7 +21,9 @@ const KEEP: usize = 64;
 
 /// The policy each widget page is served with.
 /// Scripts and styles may also come from this scheme's own `/t/` path: installed tools (see tools.rs).
-pub const CSP: &str = "default-src 'none'; script-src 'unsafe-inline' http://widget.localhost/t/ widget://localhost/t/; \
+/// `'unsafe-eval'` lets the Python playground turn Python into JavaScript as it runs. It adds no power a widget's
+/// own inline script doesn't already have; the walls that matter are the sandbox and the missing network.
+pub const CSP: &str = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' http://widget.localhost/t/ widget://localhost/t/; \
 style-src 'unsafe-inline' http://widget.localhost/t/ widget://localhost/t/; img-src data: blob:; media-src data: blob:; \
 font-src data:; form-action 'none'; base-uri 'none'";
 

@@ -220,6 +220,8 @@ pub struct CourseView {
     pub meta: types::CourseMeta,
     /// Building is paused by the learner.
     pub paused: bool,
+    /// While building: how many weeks at the start of the course are ready (it can be finished with just those).
+    pub readiness: Option<pipeline::Readiness>,
 }
 
 pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView, String> {
@@ -256,6 +258,7 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
                     origin: r.get(16)?,
                     meta: r.get::<_, Option<String>>(17)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
                     paused: r.get(18)?,
+                    readiness: None,
                 })
             },
         )
@@ -265,6 +268,9 @@ pub fn view(conn: &Connection, paths: &AppPaths, id: &str) -> Result<CourseView,
     v.grades = marking::grades(conn, id).map_err(io)?;
     v.jobs = job_summary(conn, Some(id)).map_err(io)?;
     v.progress = progress::course(conn, id, chrono::Utc::now()).map_err(io)?;
+    if v.status == "compiling" {
+        v.readiness = Some(pipeline::readiness(conn, id)?);
+    }
 
     let mut st = conn.prepare("SELECT id, unit_key, title, week, state, warnings FROM units WHERE course_id=?1 ORDER BY seq").map_err(io)?;
     let units: Vec<(String, String, String, i64, String, Option<String>)> = st

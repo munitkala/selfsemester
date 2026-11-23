@@ -13,6 +13,7 @@
   import KindIcon from "#lib/KindIcon.svelte";
   import Materials from "#lib/Materials.svelte";
   import ExtendCourse from "#lib/ExtendCourse.svelte";
+  import Standards from "#lib/Standards.svelte";
 
   let { c }: { c: CourseView } = $props();
 
@@ -42,6 +43,8 @@
       .slice(0, 4),
   );
   const weeks = $derived(c.plan?.pacing.total_weeks ?? Math.max(1, ...c.units.map((u) => u.week)));
+  // Weeks planned in all, when building was ended early and later weeks were left out.
+  const plannedWeeks = $derived(Math.max(weeks, ...(c.plan?.unbuilt ?? []).map((u) => u.week)));
   const doneAll = $derived(items.filter(settled).length);
   const mark = $derived(c.status === "completed" ? c.final_percent : c.grades.current);
 
@@ -260,7 +263,7 @@
       <dl class="facts">
         <div><dt>Instructor</dt><dd>{c.origin === "manual" ? (c.meta.instructor || "You") : "Claude (AI), through your own Claude Code"}</dd></div>
         {#if c.meta.term}<div><dt>Term</dt><dd>{c.meta.term}</dd></div>{/if}
-        <div><dt>Dates</dt><dd>{day(c.starts_at)} – {day(c.ends_at)} ({weeks} {weeks === 1 ? "week" : "weeks"})</dd></div>
+        <div><dt>Dates</dt><dd>{day(c.starts_at)} – {day(c.ends_at)} ({weeks} {weeks === 1 ? "week" : "weeks"}{#if c.plan?.unbuilt?.length}{` of ${plannedWeeks} planned`}{/if})</dd></div>
         <div><dt>Mode</dt><dd>{c.strictness === "sandbox" ? "Sandbox (practice)" : "Structured"}{c.mode === "online" ? " · needs internet" : ""}</dd></div>
       </dl>
 
@@ -289,9 +292,26 @@
                 </td>
               </tr>
             {/each}
+            {#each c.plan?.unbuilt ?? [] as u (u.key)}
+              <tr class="unbuilt">
+                <td class="nowrap">{u.week}</td>
+                <td><strong>{u.title}</strong>{#if u.topics.length}<br /><span class="small">{u.topics.join(", ")}</span>{/if}</td>
+                <td class="small">Planned, not built</td>
+              </tr>
+            {/each}
           </tbody>
         </table>
       </div>
+      {#if c.plan?.unbuilt?.length}
+        <p class="small muted">
+          Building was ended early: this course has the first {weeks === 1 ? "week" : `${weeks} weeks`} of the
+          {plannedWeeks} planned. The weeks after that were left out, and grades are shared across the work that's here.
+        </p>
+      {/if}
+
+      {#if c.plan?.standards?.length}
+        <Standards plan={c.plan} heading="h3" />
+      {/if}
 
       <h3>How you're graded</h3>
       <div class="weights">
@@ -399,6 +419,9 @@
 </div>
 
 <style>
+  .unbuilt {
+    color: var(--muted);
+  }
   .classroom {
     --course: var(--accent);
     --course-tint: var(--accent-soft);

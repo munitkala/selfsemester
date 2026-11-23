@@ -189,7 +189,27 @@ pub fn plan_schema() -> Value {
         ("domain_family", s()),
         ("unsupported_inputs", arr(s())),
         ("tools", arr(s())),
+        ("standards", arr(obj(&[("id", s()), ("text", s()), ("units", arr(s()))]))),
     ])
+}
+
+/// The standards a unit must meet, as prompt lines ("- id: text"), or "" when the plan has none for it.
+fn unit_standards(plan: &Plan, unit_key: &str) -> String {
+    plan.standards
+        .iter()
+        .filter(|s| s.units.iter().any(|u| u == unit_key))
+        .map(|s| format!("- {}: {}", s.id, s.text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Standards the plan lists but gives no existing unit, so nothing would teach them.
+pub fn uncovered_standards(plan: &Plan) -> Vec<String> {
+    plan.standards
+        .iter()
+        .filter(|s| !s.units.iter().any(|k| plan.units.iter().any(|u| &u.key == k)))
+        .map(|s| s.id.clone())
+        .collect()
 }
 
 pub fn plan(subject: &str, notes: &str, answers: &Value, bundle_choice: Option<&str>) -> StageRequest {
@@ -215,6 +235,12 @@ pub fn plan(subject: &str, notes: &str, answers: &Value, bundle_choice: Option<&
            unsupported_inputs and plan a reduced version without it.\n\
          - tools: the ids of any of these optional tools the lessons would clearly use, or none. The learner is asked \
            before anything is installed, so list only what makes a real difference to this course:\n{catalog}\n\
+         - standards: if the learner's materials or request set out official standards, learning outcomes or \
+           exam requirements the course must meet (a curriculum framework, a syllabus, an exam specification), \
+           read that source itself and list EVERY standard that applies to the level the learner chose, with its \
+           exact id and its full text word for word, and the keys of the units that teach it. Every one must be \
+           taught by at least one unit, and the units' topics must cover them. Never list a standard from memory: \
+           if you can't read the source, say so in weak_spots. Empty when there are none.\n\
          - mode 'online' if the learner needs internet, accounts or software during the course; list each in \
            dependencies.\n\
          - Readiness report: rough estimates of how well you can DELIVER this course (lesson accuracy, coverage by \
@@ -384,12 +410,22 @@ pub fn unit_styled(
         _ => "No exam in this unit.",
     };
     let fix = feedback.map(|f| format!("\nA reviewer found these problems in your previous draft; fix them all:\n{f}\n")).unwrap_or_default();
+    let standards = match unit_standards(plan, unit_key) {
+        s if s.is_empty() => String::new(),
+        s => format!(
+            "\nSTANDARDS THIS UNIT MUST MEET (from the learner's reference; the course is built to cover them):\n{s}\n\
+             Teach every one of them explicitly, name each by its id in the lesson where it's covered (for example \
+             \"(Standard {})\"), and make sure the graded work assesses them. End the lesson with a short \
+             \"Standards covered\" list saying where each one is met.\n",
+            plan.standards.iter().find(|x| x.units.iter().any(|u| u == unit_key)).map_or("", |x| x.id.as_str())
+        ),
+    };
     let prompt = format!(
-        "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{fix}{depth}\n\
+        "{ctx}\nNOW WRITE UNIT {key}: {title} (topics: {topics}).\n{exam_line}\n{standards}{fix}{depth}\n\
          - lesson.markdown: a complete self-study lesson (roughly {mins} minutes of reading): explanations, worked \
            examples with full working, {media_line}common mistakes, \
-           a short summary, and which reading-list sources to read (cite by title). Put lesson.sources_used = the \
-           URLs you relied on. Subject family: {family}.\n\
+           a short summary, and which reading-list sources to read (cite by title) and what to practise to fill \
+           the rest of the week's study time. Put lesson.sources_used = the URLs you relied on. Subject family: {family}.\n\
          {items_rule} Keys like '{key}-hw', '{key}-quiz', '{key}-exam'.\n\
          - module: 'quiz' for auto-marked items (every question mcq or numeric, with an exact answer_key entry); \
            'written' for typed answers; 'upload' when working is best done by hand and photographed.\n\
@@ -405,7 +441,9 @@ pub fn unit_styled(
         key = u.key,
         title = u.title,
         topics = u.topics.join(", "),
-        mins = (plan.pacing.hours_per_week * 60.0 * 0.4 * scale).round().max(20.0 * scale),
+        // One answer can only be so long, so a heavy week caps the lesson and leaves the rest of the study time to
+        // the readings and practice the lesson sets.
+        mins = (plan.pacing.hours_per_week * 60.0 * 0.4 * scale).round().clamp(20.0 * scale, 150.0),
         family = if plan.domain_family.is_empty() { "general" } else { plan.domain_family.as_str() },
     );
     req(exam_tier, HOUSE_RULES, prompt, unit_schema(), &[])
@@ -424,8 +462,16 @@ pub fn validation_schema() -> Value {
 }
 
 pub fn validate(plan: &Plan, unit_key: &str, content: &UnitContent) -> StageRequest {
+    let standards = match unit_standards(plan, unit_key) {
+        s if s.is_empty() => String::new(),
+        s => format!(
+            "\nThis unit must meet these standards:\n{s}\nFor each one: does the lesson really teach it (not just name \
+             it), and does the graded work assess it? A standard that isn't met is a major issue (put its id in \
+             question_id).\n"
+        ),
+    };
     let prompt = format!(
-        "Course: {}. Unit {unit_key}.\nCheck this generated unit as a careful second marker:\n{}\n\n\
+        "Course: {}. Unit {unit_key}.{standards}\nCheck this generated unit as a careful second marker:\n{}\n\n\
          For every question: is it solvable from the lesson, is the answer key correct (re-derive numeric answers), \
          does the mcq answer exactly match one option, and do rubric points add up to the question points? Is the \
          lesson accurate? For every figure (```plot or ```diagram block): does it match the maths or facts it shows \
@@ -579,6 +625,33 @@ pub(crate) mod tests {
         assert_eq!(sources(&p).tools, vec!["WebSearch", "WebFetch"]);
         assert!(unit(&p, &[], "u01", None, "").tools.is_empty());
         assert_eq!(unit(&p, &[], "u02", None, "").tier, Tier::Opus); // final exam unit
+    }
+
+    #[test]
+    fn standards_reach_their_units_and_checks() {
+        let mut v = sample_plan();
+        v["standards"] = json!([
+            {"id": "HS-ALG-PS-01", "text": "Decompose problems into smaller parts.", "units": ["u01"]},
+            {"id": "HS-PRO-PD-12", "text": "Design programs iteratively.", "units": ["u02", "u01"]},
+            {"id": "HS-SOC-CE-46", "text": "Discuss careers in computing.", "units": ["u09"]}
+        ]);
+        let plan: Plan = serde_json::from_value(v).unwrap();
+        let u1 = unit(&plan, &[], "u01", None, "");
+        assert!(u1.prompt.contains("- HS-ALG-PS-01: Decompose") && u1.prompt.contains("- HS-PRO-PD-12"));
+        assert!(!u1.prompt.contains("HS-SOC-CE-46"));
+        let u2 = unit(&plan, &[], "u02", None, "");
+        assert!(u2.prompt.contains("HS-PRO-PD-12") && !u2.prompt.contains("HS-ALG-PS-01"));
+        let content: UnitContent = serde_json::from_value(json!({
+            "lesson": {"title": "t", "markdown": "m", "est_minutes": 30, "sources_used": []}, "items": []
+        }))
+        .unwrap();
+        assert!(validate(&plan, "u01", &content).prompt.contains("must meet these standards"));
+        assert_eq!(uncovered_standards(&plan), ["HS-SOC-CE-46"]);
+        // Plans written before standards existed have none, and their prompts don't change.
+        let old: Plan = serde_json::from_value(sample_plan()).unwrap();
+        assert!(old.standards.is_empty() && uncovered_standards(&old).is_empty());
+        assert!(!unit(&old, &[], "u01", None, "").prompt.contains("STANDARDS"));
+        assert!(!validate(&old, "u01", &content).prompt.contains("standards"));
     }
 
     pub fn sample_plan() -> Value {

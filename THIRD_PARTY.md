@@ -38,9 +38,10 @@ crates' own files, which are used unmodified, and doesn't affect the rest of the
 
 ## Optional tools (downloaded only if you install them)
 
-These aren't part of the app. They're published unmodified on this project's GitHub release (`tools-1`), each with
+These aren't part of the app. They're published unmodified on this project's GitHub release (`tools-2`), each with
 its licence file, and downloaded only when you install the tool (see `tools/catalog.json`). The chess.js file is
-wrapped so it loads as a plain script; nothing else is changed.
+wrapped so it loads as a plain script; nothing else is changed. The Python playground's runner
+(`tools/src/python-runner.js`) is SelfSemester's own code, under its MIT licence.
 
 | Tool | Package | Version | Licence |
 | --- | --- | --- | --- |
@@ -50,6 +51,7 @@ wrapped so it loads as a plain script; nothing else is changed.
 | World maps | d3 | 7.9.0 | ISC |
 | World maps | topojson-client | 3.1.0 | ISC |
 | World maps | world-atlas (data from Natural Earth, public domain) | 2.0.2 | ISC |
+| Python playground | brython | 3.15.0 | BSD-3-Clause |
 | Chess rules | chess.js | 0.13.4 | BSD-2-Clause |
 
 Build-only tools (the Svelte and SvelteKit compilers, the static adapter, Vite, TypeScript, svelte-check) are MIT

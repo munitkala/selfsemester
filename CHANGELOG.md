@@ -21,6 +21,66 @@ are listed under **Unreleased**.
 - The checks and tests now run on Linux as well as Windows, so a Windows-only change can't slip back in.
 - Settings no longer assumes Windows in the text about voices, animation and backups.
 
+## 0.8.0 (2026-11-19)
+
+### Build one week at a time, and stop when you like
+
+**Why:** a long course at a high build level can take many hours of Claude work and several of your plan's usage
+windows. You should be able to stop at any point without losing what's done, see what carrying on will use before
+you do, and start studying the weeks that are finished without waiting for the rest.
+
+- Courses are now built one week at a time, in order: a week is written, then checked (and rewritten if the check
+  finds major problems), and only then does the next week start. Whatever is finished is always a usable start of
+  the course. The build page shows which week is being written.
+- **Pause building** now asks how: **Pause after this step** (the step Claude is on finishes and is kept, so none of
+  your plan's usage is wasted) or **Pause now** (the step is stopped and starts over later).
+- **Continue building** first shows what's left: how many weeks, the number of Claude calls, the expected Claude
+  time (and how long each week took so far), how that compares with a Standard build, and a warning about usage
+  limits. Heavy builds (high effort, web research or the largest models) get a stronger warning.
+- **End building** starts the course now with the weeks that are ready and drops the rest. The syllabus lists the
+  dropped weeks as planned but not built, the standards table marks standards taught only in those weeks, and grades
+  are shared across the work that's left. It's offered while building, when paused and while waiting for a usage
+  limit to reset.
+- Courses that were being built by an older version carry on as before, without any week being queued twice.
+
+### Courses built to a set of standards
+
+**Why:** a course meant to meet a curriculum framework or exam specification should follow that document, not
+Claude's memory of it, and you should be able to check that every standard is covered.
+
+- Add the official document to the course's materials (for example a standards PDF) before you plan. The plan
+  reads it and lists every standard that applies, with its exact id and wording, and the units that teach it.
+- Each unit is told which standards it must meet, names them where they're taught and ends with a "Standards
+  covered" list. The check after each unit treats a standard that isn't really taught and assessed as a mistake to
+  fix, so the unit is rewritten.
+- The review step and the course's syllabus show a **Standards covered** table, with a search box, and warn about
+  any standard no unit teaches.
+
+### Python playground
+
+- A new optional tool, **Python playground**, runs real Python 3 inside a lesson (Brython 3.15 with its standard
+  library): a code box you can edit, Run and Reset buttons, an input box for `input()`, and the output with short
+  error messages. Lessons can check what your program prints.
+- It runs sealed off like every interactive figure: no internet, files or storage. A program that runs for more
+  than five seconds is stopped instead of freezing the lesson.
+- Tool files now come from the `tools-2` release.
+
+### Maximum builds look things up
+
+- At the Maximum level (or Custom with the new **Look things up online** box), the writer of each unit may search
+  the web and open the reading list while it writes, to check facts against real sources. Pages it relies on are
+  listed under the lesson.
+- Very long steps get more time before they count as stuck: up to twice as long at the highest effort or with web
+  research, three times with both.
+- A lesson aims for at most about two and a half hours of reading. Heavier weeks put the rest of the study time
+  into the readings and practice the lesson sets, so one answer never grows too long to finish.
+
+### Demo builds
+
+- A demo installer can ship with a finished course. On its first launch on a computer with no SelfSemester data, it
+  copies the course in, opens every lesson and piece of work at once, and moves the deadlines so the course starts
+  that day. A computer that already has SelfSemester data is left alone. Ordinary installers have no demo course.
+
 ## 0.7.1 (2026-11-15)
 
 ### Choose what a course includes (issue #4)

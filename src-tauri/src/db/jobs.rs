@@ -153,11 +153,13 @@ fn log_call(conn: &Connection, job_id: i64, model: &str, out: Option<&StageOutpu
 /// Record the outcome of one attempt.
 pub fn finish(conn: &Connection, id: i64, model: &str, result: &Result<StageOutput, RunError>, now: DateTime<Utc>) -> rusqlite::Result<()> {
     let now_s = ts(now);
+    // Only a job that's still running takes the outcome: one cancelled meanwhile (its course was finished early
+    // with the weeks that were ready) stays cancelled, so nothing queues after it.
     match result {
         Ok(out) => {
             log_call(conn, id, model, Some(out), "ok")?;
             conn.execute(
-                "UPDATE jobs SET status='done', result_json=?2, error=NULL, next_attempt_at=NULL, updated_at=?3 WHERE id=?1",
+                "UPDATE jobs SET status='done', result_json=?2, error=NULL, next_attempt_at=NULL, updated_at=?3 WHERE id=?1 AND status='running'",
                 params![id, out.value.to_string(), now_s],
             )?;
         }
@@ -166,7 +168,7 @@ pub fn finish(conn: &Connection, id: i64, model: &str, result: &Result<StageOutp
             let attempts: i64 = conn.query_row("SELECT attempts FROM jobs WHERE id=?1", [id], |r| r.get(0))?;
             let next = next_attempt(*retry_at, attempts as u32, now);
             conn.execute(
-                "UPDATE jobs SET status='waiting_usage', error=?2, next_attempt_at=?3, updated_at=?4 WHERE id=?1",
+                "UPDATE jobs SET status='waiting_usage', error=?2, next_attempt_at=?3, updated_at=?4 WHERE id=?1 AND status='running'",
                 params![id, message, ts(next), now_s],
             )?;
             // The limit is on the whole plan, so everything else waiting would be refused too: hold it all until then.
@@ -179,7 +181,7 @@ pub fn finish(conn: &Connection, id: i64, model: &str, result: &Result<StageOutp
             // Stopped on purpose (the course was paused): back in the queue, and this attempt doesn't count.
             log_call(conn, id, model, None, "stopped")?;
             conn.execute(
-                "UPDATE jobs SET status='queued', attempts=max(attempts-1, 0), error=NULL, updated_at=?2 WHERE id=?1",
+                "UPDATE jobs SET status='queued', attempts=max(attempts-1, 0), error=NULL, updated_at=?2 WHERE id=?1 AND status='running'",
                 params![id, now_s],
             )?;
         }
@@ -190,12 +192,12 @@ pub fn finish(conn: &Connection, id: i64, model: &str, result: &Result<StageOutp
             let give_up = !e.is_transient() || attempts >= MAX_FAILURES;
             if give_up {
                 conn.execute(
-                    "UPDATE jobs SET status='failed', error=?2, updated_at=?3 WHERE id=?1",
+                    "UPDATE jobs SET status='failed', error=?2, updated_at=?3 WHERE id=?1 AND status='running'",
                     params![id, e.to_string(), now_s],
                 )?;
             } else {
                 conn.execute(
-                    "UPDATE jobs SET status='queued', error=?2, updated_at=?3 WHERE id=?1",
+                    "UPDATE jobs SET status='queued', error=?2, updated_at=?3 WHERE id=?1 AND status='running'",
                     params![id, e.to_string(), now_s],
                 )?;
             }

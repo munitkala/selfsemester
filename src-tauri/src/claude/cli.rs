@@ -1,7 +1,7 @@
 //! Runs the user's installed Claude Code CLI as a child process.
 
 use super::output::parse_envelope;
-use super::{ClaudeRunner, ClaudeStatus, RunError, StageOutput, StageRequest, Tier};
+use super::{ClaudeRunner, ClaudeStatus, Effort, RunError, StageOutput, StageRequest, Tier};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -99,7 +99,7 @@ impl CliRunner {
     }
 
     /// Run with stdin, enforcing the timeout. Returns (exit ok, stdout, stderr).
-    fn exec(&self, exe: &Path, args: &[String], stdin: &str) -> Result<(bool, String, String), RunError> {
+    fn exec(&self, exe: &Path, args: &[String], stdin: &str, limit: Duration) -> Result<(bool, String, String), RunError> {
         let mut child = self.command(exe).args(args).spawn()?;
         {
             let mut input = child.stdin.take().expect("stdin piped");
@@ -127,10 +127,10 @@ impl CliRunner {
                 let _ = child.wait();
                 return Err(RunError::Stopped);
             }
-            if start.elapsed() > self.timeout {
+            if start.elapsed() > limit {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(RunError::Timeout(self.timeout.as_secs()));
+                return Err(RunError::Timeout(limit.as_secs()));
             }
             std::thread::sleep(Duration::from_millis(150));
         };
@@ -182,13 +182,26 @@ impl ClaudeRunner for CliRunner {
         let exe = self.exe.as_ref().ok_or(RunError::NotInstalled)?;
         std::fs::create_dir_all(&self.workdir)?;
         let args = Self::stage_args(req)?;
-        let (_ok, stdout, stderr) = self.exec(exe, &args, &req.prompt)?;
+        let (_ok, stdout, stderr) = self.exec(exe, &args, &req.prompt, time_limit(self.timeout, req))?;
         parse_envelope(&stdout, &stderr, req.tier.alias())
     }
 
     fn stop_current(&self) {
         self.stop.store(true, Ordering::SeqCst);
     }
+}
+
+/// How long one call may run. The highest effort levels, and calls that search the web, think and read for much
+/// longer than an ordinary step, so they get up to an hour before they count as stuck.
+pub fn time_limit(base: Duration, req: &StageRequest) -> Duration {
+    let heavy = matches!(req.effort, Some(Effort::Xhigh | Effort::Max));
+    let research = req.tools.iter().any(|t| t == "WebSearch" || t == "WebFetch");
+    let factor = match (heavy, research) {
+        (true, true) => 3,
+        (true, false) | (false, true) => 2,
+        _ => 1,
+    };
+    base * factor
 }
 
 /// Find `claude` on PATH, then in the installer's default places (a GUI app's PATH can be shorter than a terminal's).
@@ -266,6 +279,21 @@ mod tests {
         assert!(matches!(r.run(&req(&[])), Err(RunError::NotInstalled)));
     }
 
+    #[test]
+    fn heavy_calls_get_longer() {
+        let base = Duration::from_secs(20 * 60);
+        let mut r = req(&[]);
+        assert_eq!(time_limit(base, &r), base);
+        r.effort = Some(Effort::High);
+        assert_eq!(time_limit(base, &r), base);
+        r.effort = Some(Effort::Max);
+        assert_eq!(time_limit(base, &r), base * 2);
+        r.tools = vec!["WebSearch".into(), "WebFetch".into()];
+        assert_eq!(time_limit(base, &r), base * 3);
+        r.effort = None;
+        assert_eq!(time_limit(base, &r), base * 2);
+    }
+
     /// Pausing a course stops the call that's running instead of waiting minutes for it to finish.
     #[cfg(windows)]
     #[test]
@@ -278,7 +306,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(400));
                 r.stop_current();
             });
-            let out = r.exec(&ping, &["-n".into(), "30".into(), "127.0.0.1".into()], "");
+            let out = r.exec(&ping, &["-n".into(), "30".into(), "127.0.0.1".into()], "", Duration::from_secs(60));
             assert!(matches!(out, Err(RunError::Stopped)), "{out:?}");
         });
         assert!(start.elapsed() < Duration::from_secs(10));

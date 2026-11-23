@@ -1,5 +1,5 @@
 {
-  "release": "tools-1",
+  "release": "tools-2",
   "tools": [
     {
       "id": "maths",
@@ -180,6 +180,48 @@
           "from": "world-atlas@2.0.2/LICENSE",
           "sha256": "8048290dfdb6e83fbed17e8985c8cfc4ce9da9b842642f3d3e497280790cfa31",
           "bytes": 734
+        }
+      ]
+    },
+    {
+      "id": "python",
+      "name": "Python playground",
+      "category": "common",
+      "summary": "Runs real Python code inside a lesson, so you can try every example and practise without installing anything. Sealed off from the internet and your files.",
+      "for": "Programming, computer science, data and anything taught with Python",
+      "licence": "BSD-3-Clause",
+      "credit": "Brython 3.15.0",
+      "hint": "A Python 3 interpreter (Brython 3.15 with its standard library: math, random, json, csv, re, statistics, collections, itertools, datetime and more; no pip packages, no files, no network, no turtle or graphics). Use it for runnable examples and practice: add <div id=\"py\"></div> and call PyRun.mount(\"#py\", code, {input: \"lines\", height: 10, readOnly: false, check: out => out.trim() === \"55\" ? \"Correct!\" : \"Not yet: the sum of 1 to 10 is what we want.\"}). That draws a code box the learner can edit, Run and Reset buttons and the output; Ctrl+Enter runs it. input() reads the lines of the optional input box (give opts.input to show it), print goes to the output, errors show a short traceback, and a program is stopped after 5 seconds. check (optional) gets the printed output and returns a message to show. PyRun.run(code, input) returns {out, err} without drawing anything, for your own displays. Write the code as a string with \n line breaks and 4-space indents. Code runs slower than desktop Python, so keep loops small (under about a million steps). Several playgrounds can share one figure.",
+      "scripts": [
+        "brython.min.js",
+        "brython_stdlib.js",
+        "python-runner.js"
+      ],
+      "styles": [],
+      "files": [
+        {
+          "name": "brython.min.js",
+          "from": "brython@3.15.0/brython.min.js",
+          "sha256": "440e9cf8f2a86a2b3c080c1649fd15c5a21e59e259e2552df5f3f9aa8ad8fce1",
+          "bytes": 996466
+        },
+        {
+          "name": "brython_stdlib.js",
+          "from": "brython@3.15.0/brython_stdlib.js",
+          "sha256": "87c63f98f5c95a28969a263d7346ddbdc31d30a736f544209618a8f636f59c4b",
+          "bytes": 5036998
+        },
+        {
+          "name": "python-runner.js",
+          "from": "repo:tools/src/python-runner.js",
+          "sha256": "d5ab6002d2aa36cddb1d840269edafe351c5f40e7d809346ba82de9f96d589fc",
+          "bytes": 7150
+        },
+        {
+          "name": "LICENCE.txt",
+          "from": "https://raw.githubusercontent.com/brython-dev/brython/3.15.0/LICENCE.txt",
+          "sha256": "e3f7e1ea7ac06a4ddb92e476bba7a37e467d3c5937082279fcaf4fe6b73d00c8",
+          "bytes": 1497
         }
       ]
     },

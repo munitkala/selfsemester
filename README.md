@@ -13,7 +13,7 @@ of handwritten working back to Claude for marking against a rubric. Final marks 
 
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it the same way.
 
-> **Status: early (0.7.1).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.8.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
 
@@ -27,8 +27,11 @@ You can also write a course yourself in the **course builder**, with no Claude a
   own voice or synthesised notes when no recording exists
 - **Figures you can try**: sliders, small simulations and self-checking drills inside the lesson, each sealed off
   from the internet, your files and the rest of the app
-- **Tools you choose**: geometry, sheet music, 3D molecules and world maps for the subjects you study, picked after
-  installing or in Settings; a course that needs something more asks first
+- **Tools you choose**: geometry, sheet music, 3D molecules, world maps and a Python playground that runs real code
+  in the lesson, picked after installing or in Settings; a course that needs something more asks first
+- **Built to a set of standards**: add a curriculum framework or exam specification to a course's materials and the
+  plan lists every standard word for word, each unit is written and checked against its own, and the syllabus shows
+  which unit teaches each one
 - **Write your own course from documents you already have**: attach PDFs, Word files or slides to any lesson or
   piece of work, start with just one lesson, and add weeks, quizzes and exams while the course runs
 - **A classroom for every course**: home, weekly modules, syllabus, gradebook and your own materials
@@ -49,6 +52,10 @@ by the app and all the themes.
 
 ## What's new
 
+Version 0.8.0 builds a course one week at a time, so you can pause whenever you like (after the current step, so
+nothing is wasted), see what carrying on will use of your Claude plan before you continue, or end building early and
+start the course with the weeks that are ready. It also builds courses to a set of standards you supply (a curriculum
+framework, an exam specification), adds a Python playground to lessons, and lets Maximum builds look facts up online.
 Version 0.7.1 lets you build a course your way: choose the models and effort, which kinds of graded work to keep
 (or lessons only), how detailed lessons are, and pause building at any point. Version 0.7.0 makes lessons something
 you can hear and try: language and music lessons play every word, tone and
@@ -239,6 +246,20 @@ npm run check              # type-check the interface
 cd src-tauri
 cargo test                 # unit tests, including a simulated course from intake to transcript
 ```
+
+**A demo installer with a finished course in it:** build the course in a separate copy of the app (set
+`SELFSEMESTER_HOME` to an empty folder), then copy it out and bundle it:
+
+```powershell
+cd src-tauri
+$env:SS_DEMO_HOME = "<that folder>"; $env:SS_DEMO_COURSE = "<course id>"; $env:SS_DEMO_OUT = "demo"
+cargo test --lib -- --ignored make_demo
+cd ..
+npm run tauri build -- --bundles nsis --config src-tauri/tauri.demo.conf.json
+```
+
+The copy leaves out build logs, settings and anything submitted or marked. On a computer with no SelfSemester data,
+the demo opens the whole course at once, starting the day it's installed.
 
 Three tests call the real Claude Code and use plan usage, so they're skipped unless asked for:
 `cargo test -- --ignored live_haiku` (one tiny call),

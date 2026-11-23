@@ -2,6 +2,7 @@ pub mod backup;
 pub mod claude;
 pub mod course;
 pub mod db;
+pub mod demo;
 pub mod paths;
 pub mod tools;
 pub mod widget;
@@ -248,15 +249,33 @@ fn build_estimate(state: tauri::State<'_, AppState>, id: String, build: BuildSet
     course::build::estimate(&state.db.lock().unwrap(), &id, &build)
 }
 
-/// Pause building a course. A step that's running now is stopped and goes back in the queue.
+/// Pause building a course. With `now`, a step that's running is stopped and goes back in the queue (what it had
+/// used is lost); otherwise it finishes and is kept, and nothing after it starts until the course is continued.
 #[tauri::command]
-fn pause_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+fn pause_course(app: AppHandle, state: tauri::State<'_, AppState>, id: String, now: Option<bool>) -> Res<()> {
     let running = pipeline::pause(&state.db.lock().unwrap(), &id)?;
-    if running {
+    if running && now.unwrap_or(true) {
         state.runner.stop_current();
     }
     changed(&app);
     Ok(())
+}
+
+/// End building early and start the course with the weeks that are ready; the rest is dropped.
+#[tauri::command]
+fn finish_course_early(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<()> {
+    let (notice, running) = pipeline::finish_with_ready(&state.db.lock().unwrap(), &state.paths, &state.sealer, &id)?;
+    if running {
+        state.runner.stop_current();
+    }
+    let _ = notice;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn build_remaining(state: tauri::State<'_, AppState>, id: String) -> Res<course::build::Remaining> {
+    course::build::remaining(&state.db.lock().unwrap(), &id)
 }
 
 #[tauri::command]
@@ -574,6 +593,12 @@ fn open_folder(app: AppHandle, state: tauri::State<'_, AppState>, path: String) 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = AppPaths::standard().expect("standard folders");
+    // A demo build brings a finished course; on its first launch on a computer with no data, copy it in.
+    if let Some(demo) = demo::bundled()
+        && let Err(e) = demo::seed(&paths, &demo, chrono::Utc::now())
+    {
+        eprintln!("couldn't set up the demo course: {e}");
+    }
     paths.ensure().expect("create app folders");
     let version = env!("CARGO_PKG_VERSION").to_string();
     // back up (or restore) before this version opens and upgrades the database
@@ -639,6 +664,8 @@ pub fn run() {
             approve_course,
             build_levels,
             pause_course,
+            finish_course_early,
+            build_remaining,
             continue_course,
             build_estimate,
             retry_course,

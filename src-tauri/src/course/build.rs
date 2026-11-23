@@ -112,7 +112,16 @@ pub struct BuildSettings {
     /// What goes into the course. Independent of the level.
     #[serde(default)]
     pub content: Content,
+    /// Unit writers may search the web and open the reading list while they write, to check facts against
+    /// real sources. Slower and heavier, so only the Maximum level turns it on by itself.
+    #[serde(default)]
+    pub research: bool,
 }
+
+/// Added to a unit prompt when the writer may look things up.
+const RESEARCH_NOTE: &str = "\n\nRESEARCH: you may use web search and open the reading-list sources (or other \
+reliable pages) to check facts, definitions, current versions and examples before you write them. Use what you find \
+in your own words, and add every page you relied on to lesson.sources_used.";
 
 impl Default for BuildSettings {
     fn default() -> Self {
@@ -128,7 +137,8 @@ pub fn preset(level: Level) -> BuildSettings {
         Level::Thorough => (Tier::Opus, Tier::Opus, Tier::Sonnet, Some(Effort::High), 2, 15),
         Level::Max => (Tier::Fable, Tier::Fable, Tier::Opus, Some(Effort::Max), 3, 25),
     };
-    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources, content: Content::default() }
+    let research = level == Level::Max;
+    BuildSettings { level, writer, exam_writer, checker, effort, rewrites, sources, content: Content::default(), research }
 }
 
 impl BuildSettings {
@@ -155,6 +165,10 @@ impl BuildSettings {
 
     pub fn for_unit(&self, req: &mut StageRequest, has_exam: bool) {
         self.set(req, if has_exam { self.exam_writer } else { self.writer });
+        if self.research && !req.tools.iter().any(|t| t == "WebSearch") {
+            req.tools.extend(["WebSearch".to_string(), "WebFetch".to_string()]);
+            req.prompt += RESEARCH_NOTE;
+        }
     }
 
     pub fn for_check(&self, req: &mut StageRequest) {
@@ -244,12 +258,15 @@ pub fn time_factor(b: &BuildSettings, kind: &str, exam_share: f64) -> f64 {
         "unit" => {
             let now = (1.0 - exam_share) * model_time(b.writer) + exam_share * model_time(b.exam_writer);
             let base = (1.0 - exam_share) * model_time(s.writer) + exam_share * model_time(s.exam_writer);
-            e * now / base
+            e * now / base * if b.research { RESEARCH_TIME } else { 1.0 }
         }
         "validate" => e * rel(b.checker, s.checker),
         _ => 1.0,
     }
 }
+
+/// Looking things up makes a unit step this much longer and heavier.
+const RESEARCH_TIME: f64 = 1.5;
 
 /// Share of units whose check finds a major problem each round (seen in test builds), used for expected rewrites.
 const REWRITE_RATE: f64 = 0.3;
@@ -292,7 +309,7 @@ fn cost(b: &BuildSettings, s: &Shape, secs: &dyn Fn(&str) -> f64) -> (f64, f64) 
     // Relative sizes: a reading list (with searches) ~ 1, a unit ~ 3, a check ~ 1.
     let usage = e
         * (model_weight(b.writer)
-            + drafts * 3.0 * s.unit_scale * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
+            + drafts * 3.0 * s.unit_scale * if b.research { RESEARCH_TIME } else { 1.0 } * (plain * model_weight(b.writer) + exams * model_weight(b.exam_writer))
             + drafts * (s.units as f64) * model_weight(b.checker));
     let exam_share = if s.units > 0 { exams / s.units as f64 } else { 0.0 };
     let f = |k: &str| time_factor(b, k, exam_share);
@@ -328,6 +345,74 @@ pub fn estimate(conn: &Connection, id: &str, b: &BuildSettings) -> Result<Estima
     let shape = shape_of(&plan, unit_scale(&b.content, lessons_only));
     let secs = |k: &str| super::progress::typical_secs(conn, k).unwrap_or(60.0);
     Ok(estimate_shape(&b, &shape, &planned, &secs))
+}
+
+/// What carrying on with a course that's being built will still use, shown before the learner continues it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Remaining {
+    pub level: Level,
+    /// Units (weeks) still to write and check.
+    pub units_left: u32,
+    pub calls_min: u32,
+    pub calls_max: u32,
+    /// Expected minutes of Claude work left.
+    pub minutes: f64,
+    /// Usage of what's left compared with a Standard build of the whole course (1.0 = the same).
+    pub usage_vs_standard: f64,
+    /// Minutes of Claude work each finished week of this course took, when at least one is done.
+    pub minutes_per_week_so_far: Option<f64>,
+    /// Effort, research or models that use plan usage quickly: worth a stronger warning.
+    pub heavy: bool,
+}
+
+pub fn remaining(conn: &Connection, id: &str) -> Result<Remaining, String> {
+    let b = of_course(conn, id)?;
+    let ready = super::pipeline::readiness(conn, id)?;
+    let states: Vec<String> = {
+        let mut st = conn.prepare("SELECT state FROM units WHERE course_id=?1").map_err(|e| e.to_string())?;
+        st.query_map([id], |r| r.get(0)).map_err(|e| e.to_string())?.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    let pending = states.iter().filter(|s| *s == "pending").count() as u32;
+    let checking = states.iter().filter(|s| *s == "generated").count() as u32;
+    let sources_left = conn
+        .query_row("SELECT count(*) FROM jobs WHERE course_id=?1 AND kind='sources' AND status='done'", [id], |r| r.get::<_, i64>(0))
+        .map_err(|e| e.to_string())?
+        == 0;
+    let r = b.rewrites as u32;
+    let src = u32::from(sources_left);
+    let whole = estimate(conn, id, &b)?;
+    let left = pending + checking;
+    let share = if ready.total_units > 0 { left as f64 / ready.total_units as f64 } else { 1.0 };
+    let minutes = super::progress::course(conn, id, chrono::Utc::now())
+        .map_err(|e| e.to_string())?
+        .map(|p| p.remaining_secs / 60.0)
+        .unwrap_or(whole.minutes * share);
+    let done_secs: Option<f64> = conn
+        .query_row(
+            "SELECT sum(c.duration_ms) / 1000.0 FROM claude_calls c JOIN jobs j ON j.id = c.job_id
+             WHERE j.course_id=?1 AND j.kind IN ('unit','validate') AND c.outcome='ok'",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let validated = states.iter().filter(|s| *s == "validated").count();
+    let per_week = done_secs.filter(|_| validated > 0).map(|s| s / 60.0 / validated as f64);
+    // Once a week of this course is done, its own pace is the best guide (typical step times are scaled for the
+    // build level, which would count a heavy level twice when the history is already from this course).
+    let minutes = match per_week {
+        Some(w) => w * (pending as f64 + 0.3 * checking as f64) + if sources_left { minutes.min(30.0) } else { 0.0 },
+        None => minutes,
+    };
+    Ok(Remaining {
+        level: b.level,
+        units_left: left,
+        calls_min: src + 2 * pending + checking,
+        calls_max: src + 2 * pending * (1 + r) + checking * (1 + 2 * r),
+        minutes,
+        usage_vs_standard: whole.usage_vs_standard * share,
+        minutes_per_week_so_far: per_week,
+        heavy: b.research || matches!(b.effort, Some(Effort::Xhigh | Effort::Max)) || whole.usage_vs_standard >= 2.0,
+    })
 }
 
 #[cfg(test)]
@@ -422,6 +507,10 @@ mod tests {
         assert_eq!((r.tier, r.effort), (Tier::Opus, Some(Effort::Max)));
         b.for_unit(&mut r, true);
         assert_eq!(r.tier, Tier::Fable);
+        assert_eq!(r.tools, ["WebSearch", "WebFetch"]);
+        assert!(r.prompt.contains("RESEARCH:"));
+        b.for_unit(&mut r, true);
+        assert_eq!(r.tools.len(), 2, "research is only added once");
         let args = crate::claude::cli::CliRunner::stage_args(&r).unwrap();
         let at = args.iter().position(|a| a == "--effort").unwrap();
         assert_eq!(args[at + 1], "max");
