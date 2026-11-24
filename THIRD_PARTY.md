@@ -20,7 +20,8 @@ at build time and keep their own licences; none of them are GPL or AGPL.
 | dirs | 6 | MIT OR Apache-2.0 | Finding AppData and Documents |
 | thiserror | 2 | MIT OR Apache-2.0 | Error types |
 
-All 279 crates in the Windows build are under permissive licences (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0,
+All 279 crates in the Windows build (358 in the Linux build, which adds the GTK and WebKitGTK bindings) are under
+permissive licences (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0,
 Unlicense, CC0) except five that are **MPL-2.0**: `cssparser`, `cssparser-macros`, `selectors`, `dtoa-short`
 (pulled in by Tauri) and `option-ext` (pulled in by `dirs`). MPL-2.0 is file-level copyleft: it applies to those
 crates' own files, which are used unmodified, and doesn't affect the rest of the app.

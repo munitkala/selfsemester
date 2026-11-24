@@ -100,10 +100,11 @@ the app from starting Claude jobs.
 Notes
 -----
   - Courses written by Claude require Claude Code (https://claude.com/claude-code)
-    installed and signed in. The app starts and the course builder works
-    without it.
+    installed and signed in, or another AI service set up in Settings. The app
+    starts and the course builder works without either.
   - Everything is stored locally. The app contacts Anthropic only through your
-    own Claude Code, and Wikimedia Commons for lesson sounds (can be disabled).
+    own Claude Code (or the other AI service you set up instead), and Wikimedia
+    Commons for lesson sounds (can be disabled).
   - The .deb and .rpm add a desktop-menu entry. The AppImage and plain ELF do
     not. To remove the app, uninstall the package or delete the file; delete
     the two data folders above to remove your data.
