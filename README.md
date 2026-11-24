@@ -12,8 +12,11 @@ its own: it releases material day by day, enforces deadlines, auto-marks quizzes
 of handwritten working back to Claude for marking against a rubric. Final marks go on a transcript.
 
 You can also write a course yourself in the **course builder**, with no Claude at all, and run it the same way.
+And if you'd rather not use Claude Code, you can point SelfSemester at **another AI service** (OpenAI, Gemini,
+OpenRouter, a model running on your own computer, and so on). It tells you up front how well that setup can build a
+course.
 
-> **Status: early (0.8.1).** It works end to end but has had little real-world use. Expect rough edges.
+> **Status: early (0.9.0).** It works end to end but has had little real-world use. Expect rough edges.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
 
@@ -40,7 +43,10 @@ You can also write a course yourself in the **course builder**, with no Claude a
 - **Insights**: streaks, study time against a daily goal, an activity calendar and mark trends
 - **Your look**: light, dark or system, nine themes, any accent colour, and effects you can turn down
 - **Fits any window**: panels rearrange as you resize
-- **Private**: everything stays on your computer; the only thing that goes online is your own Claude Code
+- **Private**: everything stays on your computer; the only thing that goes online is your own Claude Code (or the
+  AI service you chose instead)
+- **Your choice of AI**: Claude Code with your subscription by default, or any service with an OpenAI-style API,
+  with a plain report on what works and what doesn't before you build anything
 
 | | | |
 | --- | --- | --- |
@@ -52,6 +58,10 @@ by the app and all the themes.
 
 ## What's new
 
+Version 0.9.0 lets you build courses with another AI service instead of Claude Code: anything with an OpenAI-style
+API, including Ollama or LM Studio on your own computer. Settings shows how well the service can build a course,
+part by part, and a **Check** button tries it for real. Claude Code is still the default and still the most capable
+way to run the app.
 Version 0.8.1 runs on Linux as well as Windows: each release now has a `.deb`, an `.rpm`, an AppImage and a
 plain executable next to the Windows installer.
 Version 0.8.0 builds a course one week at a time, so you can pause whenever you like (after the current step, so
@@ -75,6 +85,7 @@ Version 0.5.0 added figures in lessons, themes, an Insights page, clearer feedba
 | Windows 10 or 11, 64-bit | Uses Microsoft Edge WebView2, which Windows 11 already has (the installer adds it on Windows 10 if needed). |
 | Linux, 64-bit | Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch or openSUSE 15.5+, with WebKitGTK 4.1 and GTK 3. |
 | [Claude Code](https://claude.com/claude-code) | Installed and signed in **with a Claude subscription** (Pro or Max). SelfSemester runs your own copy of Claude Code; there's no API key to enter. |
+| Or another AI service | Optional, instead of Claude Code: any service with an OpenAI-style chat API, and its address, model name and (usually) an API key. See [Using another AI service](#using-another-ai-service). |
 | Internet | Needed while a course is being built, while lesson sounds or tools are being downloaded, and whenever work is marked. Reading lessons and doing work happen offline. |
 
 To build from source instead of downloading the installer, you also need Node.js 22.17+ and Rust 1.85+. On Windows,
@@ -85,7 +96,7 @@ install the Visual Studio C++ build tools; on Linux, install the WebKitGTK 4.1 a
 
 - **Cost.** SelfSemester itself is free. Signed in with a Claude subscription, Claude Code adds no extra charges. If
   Claude Code is signed in with an API key instead, every call is billed to that key; the Settings page tells you
-  which one you're using.
+  which one you're using. Another AI service bills you at its own rates, unless it runs on your own computer.
 - **Usage limits.** Building a course is heavy work: roughly one call per stage plus two per unit, with each unit
   taking a few minutes. A long course can use a large share of your plan's limits. When a limit is reached, the
   app pauses and tries again at the reset time Claude Code reports (or at least every hour). If your limit has
@@ -119,11 +130,47 @@ install the Visual Studio C++ build tools; on Linux, install the WebKitGTK 4.1 a
   text, notes, code), images and typed notes. Claude reads them when it plans the course, writes each unit and marks
   your work, so add them before you approve a course if you want every unit to use them.
 
+## Using another AI service
+
+Claude Code is the default, and it's the way everything else in this README works. If you'd rather use something
+else, open **Settings, Another AI service**, pick a service (or "Something else"), and fill in its address, an API
+key if it needs one, and a model. There are presets for OpenAI, OpenRouter, Google Gemini, the Anthropic API,
+Mistral, DeepSeek, Groq, Ollama and LM Studio. Any service that speaks the OpenAI-style `/chat/completions` API
+should work.
+
+<p align="center"><img src="assets/screenshots/26-ai-service.png" width="760" alt="Settings, Another AI service, with a model set up and its report"></p>
+
+Under the form, **How well this can build a course** goes through each part of a build and says whether it works,
+works less well, or isn't available with that setup, and why. Press **Check** and the app asks the model a small
+question (and shows it a tiny picture, if you said it can see images) to see whether it answers in the form the app
+needs. Then press **Build with this service**. You can go back to Claude Code at any time; it only affects steps
+that haven't started yet. The New course page shows the same report while another service is in use.
+
+<p align="center"><img src="assets/screenshots/27-new-course-other-ai.png" width="760" alt="The New course page with the report for the service in use"></p>
+
+What you give up compared with Claude Code:
+
+- **No web search.** The reading list comes from the model's memory and its links aren't checked, and Thorough and
+  Maximum builds can't look things up while writing.
+- **Files.** Text files (notes, `.txt`, `.md`, `.csv`, code) are sent along with each request. PDFs and Word files
+  can't be opened, so paste what you need into a note. Photos of your work are marked only if the model can see
+  images.
+- **Quality depends on the model.** Large models make good courses. Small ones tend to lose track in long,
+  structured steps, so expect rougher lessons and some failed steps. The report guesses a model's size from its
+  name, which is rough; the Check button and a Quick build tell you more.
+- **Local servers need room.** Ollama and LM Studio often load a model with a small context window, and checking a
+  unit sends the whole unit. Set the context to 32,000 tokens or more, or answers get cut off.
+
+The API key is kept only on your computer, in `ai.json` in the app's data folder (not in the database, so it isn't
+copied into backups), and is sent only to the address you entered. Courses you already have keep everything they
+were built with when you switch.
+
 ## Privacy
 
 Everything stays on your computer. The app has no server and no account system. Your Claude Code sends course
 prompts, your course materials, your submitted work and review questions to Anthropic to generate and mark courses,
-under your agreement with Anthropic. The only other thing the app contacts is Wikimedia Commons, to find and download
+under your agreement with Anthropic. If you set up another AI service instead, the same things go to that service,
+under its terms. The only other thing the app contacts is Wikimedia Commons, to find and download
 recordings for lesson sounds: it sends the word, phrase or sound it's looking for and nothing about you. You can turn
 that off in Settings, Lesson sounds. When you install a tool, the app downloads its files from this project's GitHub
 releases; nothing about you is sent. SelfSemester never reads, stores or sends your Claude sign-in.
@@ -268,6 +315,11 @@ Three tests call the real Claude Code and use plan usage, so they're skipped unl
 `cargo test --lib -- --ignored live_compile --nocapture` (every build stage on a one-week course, about five minutes)
 and `SS_SAMPLE=physics cargo test --lib -- --ignored live_sample_unit --nocapture` (one example lesson, written and
 checked the way a real course is; these made the examples in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)).
+
+To try another AI service instead, set `SELFSEMESTER_TEST_ENDPOINT` (for example `http://localhost:1234/v1`),
+`SELFSEMESTER_TEST_MODEL` and, if it needs one, `SELFSEMESTER_TEST_KEY`. Then
+`cargo test -- --ignored live_endpoint --nocapture` runs the same check as the Settings button, and `live_compile`
+runs every build stage through that service. Add `SELFSEMESTER_TEST_IMAGES=1` to check pictures too.
 
 Two environment variables help when testing without touching real courses:
 

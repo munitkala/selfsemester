@@ -7,6 +7,39 @@ are listed under **Unreleased**.
 
 Nothing yet.
 
+## 0.9.0 (2026-11-24)
+
+### Build with another AI service
+
+**Why:** not everyone has a Claude subscription or wants to use Claude Code. Some people already pay for another
+service, and some want everything to stay on their own computer with a local model. The app should work for them
+too, and be honest about what they lose.
+
+- New in Settings: **Another AI service**. Choose a preset (OpenAI, OpenRouter, Google Gemini, the Anthropic API,
+  Mistral, DeepSeek, Groq, Ollama or LM Studio) or any other service with an OpenAI-style chat API, then add its
+  address, an API key if it needs one, and a model. **Load the list** fetches the service's model names.
+- You can pick separate models for planning and exams, and for quick checks. Otherwise one model does everything.
+- **How well this can build a course**: a report that goes through planning, lessons, the reading list, research,
+  marking, photos and your own materials, and says for each whether it works, works less well, or isn't available
+  with that setup, and why. It also says what it will cost (billed per use, or free on your own computer). The New
+  course page shows the same report while another service is in use, and Settings shows Claude Code's for
+  comparison.
+- **Check** asks the model one small question, and shows it a tiny picture if you said it can see images, to make
+  sure it answers in the form the app needs before you build anything.
+- Claude Code is still the default. Nothing changes unless you press **Build with this service**, and you can switch
+  back at any time. Switching only affects steps that haven't started.
+- With another service there's no web search, so the reading list comes from the model's memory and is marked as
+  unchecked. Text files are sent with each request; pictures are sent when the model can see them; PDFs and Word
+  files are listed as not included, so the model knows to work without them.
+- The app asks for JSON in whatever way each service accepts (a schema, plain JSON, or in words), remembers what
+  worked, and asks once more when an answer is missing fields. An answer that's cut off at the output limit now
+  says so, with a hint about the context size, instead of a confusing error.
+- Rate limits and "out of credit" answers pause the work and try again later, the same way Claude usage limits do.
+- The API key is kept in its own file in the app's data folder, not in the database, so it's never copied into
+  backups. It's handed to curl on its input, never on the command line.
+- No new libraries: requests go through the system's own curl, as downloads already did.
+- The first-launch terms now mention other AI services, so you'll be asked to accept them once more.
+
 ## 0.8.1 (2026-11-23)
 
 ### Runs on Linux (issue #5)

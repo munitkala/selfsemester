@@ -1,15 +1,20 @@
-//! The Claude layer.
+//! The Claude layer, and the AI service the learner can use instead.
 //!
-//! SelfSemester never calls the Claude API itself and never handles Claude credentials. It runs the user's own,
-//! unmodified Claude Code CLI (`claude -p`), which the user signed in to through Claude Code's own flow, so usage
-//! comes out of the user's own Claude subscription. See CLAUDE.md "Claude access" for the rules this follows.
+//! By default SelfSemester runs the user's own, unmodified Claude Code CLI (`claude -p`), which the user signed in
+//! to through Claude Code's own flow, so usage comes out of their own Claude subscription. The app never calls the
+//! Claude API with those credentials and never handles them. A learner who'd rather use another service (OpenAI,
+//! OpenRouter, a model on their own computer...) can set one up in Settings; see `endpoint.rs`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod backend;
 pub mod cli;
+pub mod endpoint;
+pub mod fit;
 pub mod output;
 
+pub use backend::Backend;
 pub use cli::CliRunner;
 
 /// Model tier by job (passed to `--model` as an alias, so it follows the latest model of each tier).
@@ -97,9 +102,12 @@ pub struct StageOutput {
     pub model: String,
 }
 
-/// What the app knows about the local Claude Code install. Deliberately holds no account details or tokens.
+/// What the app knows about the local Claude Code install, or about the other service when one is in use.
+/// Deliberately holds no account details, tokens or keys.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ClaudeStatus {
+    /// "claude_code" or "endpoint". For an endpoint, `path` is its address and `version` the model.
+    pub provider: String,
     pub installed: bool,
     pub path: Option<String>,
     pub version: Option<String>,
@@ -123,11 +131,14 @@ pub enum RunError {
         retry_at: Option<chrono::DateTime<chrono::Utc>>,
         message: String,
     },
-    #[error("Claude Code timed out after {0} s")]
+    #[error("the step timed out after {0} s")]
     Timeout(u64),
     #[error("Claude Code returned an error: {0}")]
     Claude(String),
-    #[error("couldn't read Claude Code's answer: {0}")]
+    /// Something the other AI service said no to (a wrong key or model, say). Retrying won't help.
+    #[error("the AI service returned an error: {0}")]
+    Endpoint(String),
+    #[error("couldn't read the answer: {0}")]
     BadOutput(String),
     #[error("request too large for the command line: {0}")]
     TooLarge(String),
@@ -145,7 +156,7 @@ impl RunError {
     }
 }
 
-/// Anything that can run a stage. The CLI runner is the only real one; tests use fakes.
+/// Anything that can run a stage: Claude Code, another AI service, or a fake in tests.
 pub trait ClaudeRunner: Send + Sync {
     fn status(&self) -> ClaudeStatus;
     fn run(&self, req: &StageRequest) -> Result<StageOutput, RunError>;

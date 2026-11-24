@@ -195,7 +195,7 @@ mod tests {
         let (paths, conn, id) = built_course(&tmp.path().join("builder"));
         // A second course and some personal bits that mustn't travel.
         crate::course::pipeline::create(&conn, "Another subject", "").unwrap();
-        db::set_setting(&conn, "notice_v3_accepted_at", "2026-01-01").unwrap();
+        db::set_setting(&conn, "notice_v4_accepted_at", "2026-01-01").unwrap();
         let out = tmp.path().join("demo");
         export(&paths, &conn, &id, &out).unwrap();
         assert!(paths.course_dir(&id).is_dir(), "the builder's own course is left alone");
@@ -204,7 +204,7 @@ mod tests {
         let n = |sql: &str| -> i64 { d.query_row(sql, [], |r| r.get(0)).unwrap() };
         assert_eq!(n("SELECT count(*) FROM courses"), 1);
         assert_eq!(n("SELECT count(*) FROM jobs"), 0);
-        assert_eq!(n("SELECT count(*) FROM settings WHERE key='notice_v3_accepted_at'"), 0);
+        assert_eq!(n("SELECT count(*) FROM settings WHERE key='notice_v4_accepted_at'"), 0);
         assert_eq!(n("SELECT count(*) FROM settings WHERE key='seal_key'"), 1);
         drop(d);
 

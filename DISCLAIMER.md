@@ -7,7 +7,7 @@ By installing or using SelfSemester you accept the points below. If you don't ac
 SelfSemester is free, open-source software provided **"as is", without warranty of any kind**, as set out in the
 MIT licence (`LICENSE`). To the fullest extent the law allows, the authors and contributors are **not liable for any
 loss or damage** arising from using it or relying on anything it produces. That includes lost data, lost time, wrong
-marks, missed deadlines, usage or charges on your Claude account, and decisions you make based on course content.
+marks, missed deadlines, usage or charges on your Claude account or any other AI service, and decisions you make based on course content.
 You use it at your own risk.
 
 ## 2. Educational use only, not professional advice
@@ -70,7 +70,12 @@ your rights, open an issue on GitHub and it will be looked at promptly.
 - Course requests and the work you submit for marking (including uploaded photos and files) are **sent to Anthropic**
   through your Claude Code. Don't submit anything you aren't comfortable sharing with Anthropic, or anything that
   contains other people's personal information.
-- SelfSemester is an independent project. It isn't made by, affiliated with or endorsed by Anthropic. Claude and
+- If you set up another AI service in Settings instead, course requests and submitted work are **sent to that
+  service**, and your use of it is governed by **your own agreement with that provider**, including any charges.
+  The authors accept no responsibility for other services either, or for how well a course built with one turns
+  out. Settings describes what each setup can and can't do, but that report is an estimate, not a promise.
+- SelfSemester is an independent project. It isn't made by, affiliated with or endorsed by Anthropic or any other
+  AI provider. Claude and
   Claude Code are trademarks of Anthropic.
 
 ## 7. Academic integrity

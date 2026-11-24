@@ -17,6 +17,8 @@
   let { children } = $props();
   let jobs = $state<JobSummary | null>(null);
   let claudeProblem = $state<string | null>(null);
+  // "Claude" with Claude Code; plain "The AI" when another service builds the courses.
+  let aiName = $state("Claude");
   let restored = $state<string | null>(null);
   // First-launch terms notice: null while checking, false until accepted.
   let noticeOk = $state<boolean | null>(null);
@@ -94,6 +96,7 @@
       .status()
       .then((s) => {
         claudeProblem = s.claude.installed && s.claude.logged_in ? null : s.claude.problem;
+        aiName = s.claude.provider === "endpoint" ? "The AI" : "Claude";
         if (s.startup.result?.kind === "restored") restored = s.startup.result.created_at;
       })
       .catch(() => {});
@@ -123,11 +126,11 @@
       <h1 id="notice-title">Before you start</h1>
       <p class="muted">SelfSemester is free software, provided as is. Please read and accept these points.</p>
       <ul>
-        <li><strong>No warranty or liability.</strong> You use it at your own risk. The authors aren't responsible for any loss, including wrong marks, lost data, or usage and charges on your Claude account.</li>
-        <li><strong>Not professional advice.</strong> Courses Claude writes are AI-generated self-study material and can contain mistakes; courses you write yourself are your own content. For health, law, money, safety or any subject where an error could cause harm, check everything with a qualified professional.</li>
+        <li><strong>No warranty or liability.</strong> You use it at your own risk. The authors aren't responsible for any loss, including wrong marks, lost data, or usage and charges on your Claude account or any other AI service you use.</li>
+        <li><strong>Not professional advice.</strong> Courses the AI writes are AI-generated self-study material and can contain mistakes; courses you write yourself are your own content. For health, law, money, safety or any subject where an error could cause harm, check everything with a qualified professional.</li>
         <li><strong>Not a qualification.</strong> Marks and transcripts aren't accredited and give no degree, credit or certification.</li>
         <li><strong>Personal study only.</strong> Don't publish or sell generated courses or downloaded material. Follow each source's licence, and don't use the app to get around paywalls, logins or site terms. Lessons draw their own figures and credit what they adapt, but generated content can still resemble existing material.</li>
-        <li><strong>Your data goes to Anthropic.</strong> Course requests and the work you submit, including photos, are sent to Anthropic through your own Claude Code, under your own agreement with Anthropic. Don't submit other people's personal information.</li>
+        <li><strong>Your data goes to the AI service.</strong> Course requests and the work you submit, including photos, are sent to Anthropic through your own Claude Code, under your own agreement with Anthropic. If you set up another AI service in Settings instead, they go to that service, under its terms. Don't submit other people's personal information.</li>
         <li><strong>Academic integrity.</strong> If you're at a school or university, follow its rules on AI tools.</li>
         <li><strong>Back up your data.</strong> Everything is stored only on this computer. SelfSemester makes a copy in Documents before each update, but keep your own copy somewhere else too.</li>
       </ul>
@@ -162,7 +165,7 @@
     </nav>
     <div class="activity" aria-live="polite">
       {#if jobs && (jobs.running || jobs.queued)}
-        {@const busy = jobs.running ? `Claude is ${stageLabel[jobs.running_kind ?? ""] ?? "working"}` : "Steps waiting to start"}
+        {@const busy = jobs.running ? `${aiName} is ${stageLabel[jobs.running_kind ?? ""] ?? "working"}` : "Steps waiting to start"}
         <span class="chip busy" title={compact ? busy : undefined}>
           <span class="spinner" aria-hidden="true"></span>
           <span class:sr={compact}>{busy}{jobs.queued ? ` · ${jobs.queued} queued` : ""}</span>
@@ -178,9 +181,9 @@
           <span class="muted" class:sr={compact}>Building paused</span>
         </span>
       {:else}
-        <span class="chip" title={compact ? "Claude is idle" : undefined}>
+        <span class="chip" title={compact ? `${aiName} is idle` : undefined}>
           <span class="dot" aria-hidden="true"></span>
-          <span class="muted" class:sr={compact}>Claude is idle</span>
+          <span class="muted" class:sr={compact}>{aiName} is idle</span>
         </span>
       {/if}
       {#if !autoCompact}

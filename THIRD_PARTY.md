@@ -71,5 +71,10 @@ licensed and aren't shipped. `deepmerge` (MIT), pulled in by the Svelte build pl
 
 - **Claude Code** is Anthropic's software. SelfSemester doesn't bundle, modify or redistribute it. Each user
   installs it themselves and signs in with their own Claude account, under Anthropic's terms.
+- **curl.** Downloads, and requests to another AI service if you set one up, go through the copy of curl that
+  comes with Windows 10 and later and with Linux. It's part of the system, not shipped with SelfSemester; curl's
+  own licence is a permissive MIT-style one.
+- **Other AI services.** SelfSemester only sends requests to a service you set up yourself, with your own account and
+  key, under that provider's terms. No provider's software or SDK is included.
 - **Course material.** The repository contains no textbooks or downloaded content. Courses are generated on the
   user's own computer, for their personal study, and link to their sources with each source's licence.

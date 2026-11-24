@@ -1,12 +1,21 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { api } from "#lib/api.ts";
+  import { onMount } from "svelte";
+  import { api, type AiView } from "#lib/api.ts";
   import Icon from "#lib/Icon.svelte";
+  import FitReport from "#lib/FitReport.svelte";
 
   let subject = $state("");
   let notes = $state("");
   let busy = $state(false);
   let error = $state<string | null>(null);
+
+  // Shown only when another AI service is set up, so the learner knows what they'll get before planning starts.
+  let ai = $state<AiView | null>(null);
+  const other = $derived(ai?.provider === "endpoint");
+  onMount(() => {
+    api.ai().then((v) => (ai = v)).catch(() => {});
+  });
 
   const examples = ["Quantum mechanics 1", "Godot game engine for beginners", "Beginner piano", "Git and GitHub", "Linear algebra"];
 
@@ -25,7 +34,17 @@
 </script>
 
 <h1 class="page-enter">New course</h1>
-<p class="lead">Name a subject. Claude asks a few questions, then plans the course and shows how well it can teach and mark it before anything is built.</p>
+<p class="lead">Name a subject. {other ? "The AI" : "Claude"} asks a few questions, then plans the course and shows how well it can teach and mark it before anything is built.</p>
+
+{#if other && ai}
+  <section class="card">
+    <div class="spread">
+      <h2>Built with {ai.endpoint.model || "another AI service"}</h2>
+      <a href="/settings#ai-service" class="small">Change</a>
+    </div>
+    <FitReport fit={ai.fit} compact />
+  </section>
+{/if}
 
 <ol class="steps small" aria-label="How it works">
   <li><span>1</span> Name a subject</li>
@@ -50,10 +69,10 @@
   </div>
   {#if error}<p class="note bad">{error}</p>{/if}
   <button type="submit" disabled={busy || !subject.trim()}>{busy ? "Starting…" : "Continue"}</button>
-  <p class="small muted">This uses your Claude plan's usage. Nothing is built until you approve the plan.</p>
+  <p class="small muted">{other ? "This uses the AI service you set up." : "This uses your Claude plan's usage."} Nothing is built until you approve the plan.</p>
 </form>
 
-<p class="small muted">Rather write the course yourself, without Claude? Use the <a href="/build">course builder</a>.</p>
+<p class="small muted">Rather write the course yourself, without {other ? "AI" : "Claude"}? Use the <a href="/build">course builder</a>.</p>
 
 <style>
   .examples {

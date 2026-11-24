@@ -5,6 +5,18 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "0.9.0",
+    date: "2026-11-24",
+    title: "Build with another AI service",
+    notes: [
+      "Settings has a new section, Another AI service: use OpenAI, Gemini, OpenRouter, Ollama, LM Studio or any service with an OpenAI-style API instead of Claude Code.",
+      "A report shows how well that setup can build a course, part by part, before you build anything.",
+      "Check tries the service for real with one small question (and a tiny picture, if the model can see images).",
+      "Claude Code stays the default, and you can switch back at any time.",
+      "The API key stays on this computer and is left out of backups.",
+    ],
+  },
+  {
     version: "0.8.1",
     date: "2026-11-23",
     title: "Runs on Linux",

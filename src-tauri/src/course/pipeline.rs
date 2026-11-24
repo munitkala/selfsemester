@@ -891,15 +891,28 @@ mod live_tests {
     use crate::claude::{ClaudeRunner, CliRunner};
     use serde_json::json;
 
-    /// Real Claude Code calls for every compile stage on a tiny course. Uses plan usage; opt-in:
+    /// Real calls for every compile stage on a tiny course. Uses plan usage; opt-in:
     /// `cargo test --lib -- --ignored live_compile --nocapture`. Writes results to $SS_LIVE_OUT (default: temp dir).
+    /// Goes through Claude Code, or through another service when SELFSEMESTER_TEST_ENDPOINT and
+    /// SELFSEMESTER_TEST_MODEL are set (SELFSEMESTER_TEST_KEY too, if it needs one).
     #[test]
     #[ignore]
     fn live_compile_stages() {
         let out_dir = std::env::var("SS_LIVE_OUT").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join("ss-live"));
         std::fs::create_dir_all(&out_dir).unwrap();
         let work = tempfile::tempdir().unwrap();
-        let r = CliRunner::new(work.path().to_path_buf());
+        let r: Box<dyn ClaudeRunner> = match std::env::var("SELFSEMESTER_TEST_ENDPOINT") {
+            Ok(url) => Box::new(crate::claude::endpoint::EndpointRunner::new(
+                crate::claude::endpoint::Endpoint {
+                    base_url: url,
+                    model: std::env::var("SELFSEMESTER_TEST_MODEL").expect("set SELFSEMESTER_TEST_MODEL"),
+                    api_key: std::env::var("SELFSEMESTER_TEST_KEY").unwrap_or_default(),
+                    ..Default::default()
+                },
+                work.path().to_path_buf(),
+            )),
+            Err(_) => Box::new(CliRunner::new(work.path().to_path_buf())),
+        };
         let save = |name: &str, v: &Value| std::fs::write(out_dir.join(format!("{name}.json")), serde_json::to_string_pretty(v).unwrap()).unwrap();
         let run = |name: &str, req: &crate::claude::StageRequest| {
             let t = std::time::Instant::now();

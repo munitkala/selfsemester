@@ -8,7 +8,8 @@ pub mod tools;
 pub mod widget;
 pub mod worker;
 
-use claude::{ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
+use claude::endpoint::{AiChoice, Check, Endpoint};
+use claude::{Backend, ClaudeRunner, ClaudeStatus, CliRunner, StageRequest, Tier};
 use course::build::BuildSettings;
 use course::{builder, marking, materials, pipeline, review, schedule::LatePolicy, schedule::Strictness, seal::Sealer};
 use paths::AppPaths;
@@ -24,6 +25,8 @@ pub struct AppState {
     pub paths: AppPaths,
     pub db: Arc<Mutex<Connection>>,
     pub runner: Arc<dyn ClaudeRunner>,
+    /// The same thing as `runner`, for the settings that pick Claude Code or another AI service.
+    pub backend: Arc<Backend>,
     pub sealer: Sealer,
 }
 
@@ -128,6 +131,104 @@ async fn tokio_sleep(ms: u64) {
     let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(std::time::Duration::from_millis(ms))).await;
 }
 
+// ---------- which AI builds courses ----------
+
+/// The AI settings as the Settings page sees them. The API key itself never goes back to the page.
+#[derive(Serialize)]
+struct AiView {
+    provider: String,
+    endpoint: Endpoint,
+    key_set: bool,
+    /// For whichever is in use now.
+    fit: claude::fit::Fit,
+    /// For each of the two, so the page can show both side by side.
+    claude_code_fit: claude::fit::Fit,
+    endpoint_fit: claude::fit::Fit,
+}
+
+fn ai_view(choice: &AiChoice) -> AiView {
+    let key_set = !choice.endpoint.api_key.trim().is_empty();
+    let mut endpoint = choice.endpoint.clone();
+    endpoint.api_key.clear();
+    AiView {
+        provider: if choice.uses_endpoint() { "endpoint".into() } else { "claude_code".into() },
+        endpoint,
+        key_set,
+        fit: claude::fit::assess(choice),
+        claude_code_fit: claude::fit::for_claude_code(),
+        endpoint_fit: claude::fit::for_endpoint(&choice.endpoint),
+    }
+}
+
+#[tauri::command]
+fn ai_settings(state: tauri::State<'_, AppState>) -> AiView {
+    ai_view(&state.backend.choice())
+}
+
+/// Save the other service's settings. `key` None keeps the saved key; Some("") removes it.
+#[tauri::command]
+fn save_endpoint(app: AppHandle, state: tauri::State<'_, AppState>, endpoint: Endpoint, key: Option<String>) -> Res<AiView> {
+    let mut choice = state.backend.choice();
+    let old = choice.endpoint.clone();
+    let mut e = Endpoint {
+        base_url: endpoint.base_url.trim().trim_end_matches('/').to_string(),
+        model: endpoint.model.trim().to_string(),
+        strong_model: endpoint.strong_model.trim().to_string(),
+        quick_model: endpoint.quick_model.trim().to_string(),
+        api_key: key.map(|k| k.trim().to_string()).unwrap_or(old.api_key.clone()),
+        check: old.check.clone(),
+        ..endpoint
+    };
+    // A check only counts for the settings it was made with.
+    let same = (&e.base_url, &e.model, &e.strong_model, &e.api_key, e.sees_images) == (&old.base_url, &old.model, &old.strong_model, &old.api_key, old.sees_images);
+    if !same {
+        e.check = None;
+    }
+    // Everything else can be saved half-finished, but a key curl can't take would only fail later.
+    if crate::claude::endpoint::bad_key(&e.api_key) {
+        return Err("The API key has a character in it that can't be right (a quote, backslash or line break).".into());
+    }
+    choice.endpoint = e;
+    state.backend.set_choice(choice.clone()).map_err(|e| format!("Couldn't save the AI settings: {e}"))?;
+    changed(&app);
+    Ok(ai_view(&choice))
+}
+
+/// Build with Claude Code ("claude_code") or the other service ("endpoint").
+#[tauri::command]
+fn use_provider(app: AppHandle, state: tauri::State<'_, AppState>, provider: String) -> Res<AiView> {
+    if provider != "claude_code" && provider != "endpoint" {
+        return Err(format!("unknown provider {provider}"));
+    }
+    let mut choice = state.backend.choice();
+    choice.provider = provider;
+    state.backend.set_choice(choice.clone()).map_err(|e| format!("Couldn't save the AI settings: {e}"))?;
+    changed(&app);
+    Ok(ai_view(&choice))
+}
+
+/// Try the other service for real with a tiny question (and a tiny picture if it's meant to see them).
+#[tauri::command]
+async fn check_endpoint(state: tauri::State<'_, AppState>) -> Res<(Check, AiView)> {
+    let backend = state.backend.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let c = backend.check_endpoint().map_err(err)?;
+        Ok((c, ai_view(&backend.choice())))
+    })
+    .await
+    .map_err(err)?
+}
+
+/// The models a service offers, for the picker. Uses the saved key when `key` is None.
+#[tauri::command]
+async fn endpoint_models(state: tauri::State<'_, AppState>, endpoint: Endpoint, key: Option<String>) -> Res<Vec<String>> {
+    let backend = state.backend.clone();
+    let tmp = state.paths.data_dir.join("tmp");
+    let mut draft = endpoint;
+    draft.api_key = key.unwrap_or_else(|| backend.choice().endpoint.api_key);
+    tauri::async_runtime::spawn_blocking(move || backend.endpoint_models(&draft, tmp)).await.map_err(err)?
+}
+
 /// Queue state only (cheap: no Claude Code process is started).
 #[tauri::command]
 fn jobs_status(state: tauri::State<'_, AppState>) -> Res<course::JobSummary> {
@@ -164,7 +265,7 @@ async fn backup_now(state: tauri::State<'_, AppState>) -> Res<String> {
 // ---------- terms notice ----------
 
 /// Bump when the first-launch notice changes, so everyone sees the new version once.
-const NOTICE_KEY: &str = "notice_v3_accepted_at";
+const NOTICE_KEY: &str = "notice_v4_accepted_at";
 
 #[tauri::command]
 fn notice_accepted(state: tauri::State<'_, AppState>) -> Res<bool> {
@@ -613,7 +714,8 @@ pub fn run() {
     backup::mark_version(&conn, &version).expect("record app version");
     db::jobs::requeue_interrupted(&conn).expect("requeue jobs");
     let sealer = Sealer::load(&conn).expect("seal key");
-    let runner: Arc<dyn ClaudeRunner> = Arc::new(CliRunner::new(paths.claude_workdir()));
+    let backend = Arc::new(Backend::new(CliRunner::new(paths.claude_workdir()), paths.data_dir.join("ai.json"), paths.data_dir.join("tmp")));
+    let runner: Arc<dyn ClaudeRunner> = backend.clone();
     let db = Arc::new(Mutex::new(conn));
 
     let worker = Arc::new(worker::Worker { paths: paths.clone(), db: db.clone(), runner: runner.clone(), sealer: sealer.clone() });
@@ -623,7 +725,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { startup, paths, db, runner, sealer })
+        .manage(AppState { startup, paths, db, runner, backend, sealer })
         .manage(widget::Store::default())
         .register_uri_scheme_protocol("widget", |ctx, request| {
             use tauri::Manager;
@@ -652,6 +754,11 @@ pub fn run() {
             set_audio_online,
             app_status,
             run_test_stage,
+            ai_settings,
+            save_endpoint,
+            use_provider,
+            check_endpoint,
+            endpoint_models,
             jobs_status,
             resume_now,
             notice_accepted,

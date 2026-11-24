@@ -5,6 +5,9 @@
   import DisplaySettings from "#lib/DisplaySettings.svelte";
   import PatchNotes from "#lib/PatchNotes.svelte";
   import ToolList from "#lib/ToolList.svelte";
+  import EndpointSetup from "#lib/EndpointSetup.svelte";
+  import FitReport from "#lib/FitReport.svelte";
+  import type { AiView } from "#lib/api.ts";
 
   const sections = [
     { id: "whats-new", label: "What's new" },
@@ -16,6 +19,7 @@
     { id: "tools", label: "Tools" },
     { id: "sounds", label: "Lesson sounds" },
     { id: "claude", label: "Claude Code" },
+    { id: "ai-service", label: "Another AI service" },
     { id: "data", label: "Data and backups" },
   ];
 
@@ -29,6 +33,14 @@
   let backupMsg = $state<string | null>(null);
   let backupError = $state<string | null>(null);
   let soundsOnline = $state(true);
+  let ai = $state<AiView | null>(null);
+
+  /** The other service was saved or switched on or off: the status at the top of the page changes with it. */
+  function aiChanged(v: AiView) {
+    const switched = ai !== null && ai.provider !== v.provider;
+    ai = v;
+    if (switched) refresh();
+  }
 
   async function setSoundsOnline(on: boolean) {
     soundsOnline = on;
@@ -80,6 +92,7 @@
   }
 
   const ready = $derived(!!status?.claude.installed && !!status?.claude.logged_in);
+  const claudeInUse = $derived(ai ? ai.provider === "claude_code" : true);
   onMount(() => {
     refresh();
     loadBackups();
@@ -89,7 +102,7 @@
 
 <div class="page-enter">
 <h1>Settings</h1>
-<p class="lead">How SelfSemester looks and runs, how it reaches Claude, and where it keeps your files.</p>
+<p class="lead">How SelfSemester looks and runs, which AI builds your courses, and where it keeps your files.</p>
 
 <div class="settings-grid">
 <nav class="jump" aria-label="Settings sections">
@@ -130,10 +143,15 @@
     <h2>Claude Code</h2>
     <button class="ghost" onclick={refresh}>Check again</button>
   </div>
+  {#if !claudeInUse}
+    <p class="note">Courses are being built with another AI service right now (see below). Claude Code is ready to take over again whenever you switch back.</p>
+  {/if}
   {#if loadError}
     <p class="bad">{loadError}</p>
   {:else if !status}
     <p class="muted">Checking…</p>
+  {:else if status.claude.provider === "endpoint"}
+    <p class="small muted">Recommended: everything works with Claude Code and your Claude subscription, at no extra charge.</p>
   {:else}
     <dl>
       <dt>Installed</dt>
@@ -154,15 +172,25 @@
       SelfSemester runs your own Claude Code and never sees your sign-in. Work counts toward your plan's usage limits; if you
       hit one, work pauses and picks up again when the limit resets.
     </p>
+    {#if ai}
+      <details>
+        <summary class="small">How well Claude Code builds a course</summary>
+        <FitReport fit={ai.claude_code_fit} compact />
+      </details>
+    {/if}
   {/if}
 </section>
+
+<EndpointSetup onchange={aiChanged} />
 
 <section class="card">
   <div class="spread">
     <h2>Test call</h2>
     <button onclick={runTest} disabled={!ready || testing}>{testing ? "Running…" : "Run test"}</button>
   </div>
-  <p class="muted small">One small Haiku request through the job queue, to check everything works end to end.</p>
+  <p class="muted small">
+    One small request through the job queue, to {claudeInUse ? "Claude Code (Haiku)" : "the other AI service"}, to check everything works end to end.
+  </p>
   {#if testError}<p class="bad">{testError}</p>{/if}
   {#if test}
     {#if test.job.status === "done" && test.result}
