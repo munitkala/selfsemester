@@ -5,7 +5,8 @@
   import DisplaySettings from "#lib/DisplaySettings.svelte";
   import PatchNotes from "#lib/PatchNotes.svelte";
   import ToolList from "#lib/ToolList.svelte";
-  import EndpointSetup from "#lib/EndpointSetup.svelte";
+  import AiServices from "#lib/AiServices.svelte";
+  import { jobsOnClaude } from "#lib/ai.ts";
   import FitReport from "#lib/FitReport.svelte";
   import type { AiView } from "#lib/api.ts";
 
@@ -19,7 +20,7 @@
     { id: "tools", label: "Tools" },
     { id: "sounds", label: "Lesson sounds" },
     { id: "claude", label: "Claude Code" },
-    { id: "ai-service", label: "Another AI service" },
+    { id: "ai-service", label: "AI services" },
     { id: "data", label: "Data and backups" },
   ];
 
@@ -35,9 +36,9 @@
   let soundsOnline = $state(true);
   let ai = $state<AiView | null>(null);
 
-  /** The other service was saved or switched on or off: the status at the top of the page changes with it. */
+  /** Who does which job changed: the status at the top of the page changes with it. */
   function aiChanged(v: AiView) {
-    const switched = ai !== null && ai.provider !== v.provider;
+    const switched = ai !== null && JSON.stringify(ai.roles) !== JSON.stringify(v.roles);
     ai = v;
     if (switched) refresh();
   }
@@ -92,7 +93,7 @@
   }
 
   const ready = $derived(!!status?.claude.installed && !!status?.claude.logged_in);
-  const claudeInUse = $derived(ai ? ai.provider === "claude_code" : true);
+  const onClaude = $derived(ai ? jobsOnClaude(ai.roles) : 4);
   onMount(() => {
     refresh();
     loadBackups();
@@ -143,8 +144,10 @@
     <h2>Claude Code</h2>
     <button class="ghost" onclick={refresh}>Check again</button>
   </div>
-  {#if !claudeInUse}
-    <p class="note">Courses are being built with another AI service right now (see below). Claude Code is ready to take over again whenever you switch back.</p>
+  {#if onClaude === 0}
+    <p class="note">Every job is going to your other AI services right now (see below). Claude Code is ready to take over again whenever you switch back.</p>
+  {:else if onClaude < 4}
+    <p class="small muted">Claude Code does {onClaude} of the 4 jobs; your other services do the rest (see below).</p>
   {/if}
   {#if loadError}
     <p class="bad">{loadError}</p>
@@ -181,7 +184,7 @@
   {/if}
 </section>
 
-<EndpointSetup onchange={aiChanged} />
+<AiServices onchange={aiChanged} />
 
 <section class="card">
   <div class="spread">
@@ -189,7 +192,7 @@
     <button onclick={runTest} disabled={!ready || testing}>{testing ? "Running…" : "Run test"}</button>
   </div>
   <p class="muted small">
-    One small request through the job queue, to {claudeInUse ? "Claude Code (Haiku)" : "the other AI service"}, to check everything works end to end.
+    One small request through the job queue, to whoever does quick checks, to check everything works end to end.
   </p>
   {#if testError}<p class="bad">{testError}</p>{/if}
   {#if test}

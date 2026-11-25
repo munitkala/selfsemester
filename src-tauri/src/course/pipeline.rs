@@ -902,7 +902,7 @@ mod live_tests {
         std::fs::create_dir_all(&out_dir).unwrap();
         let work = tempfile::tempdir().unwrap();
         let r: Box<dyn ClaudeRunner> = match std::env::var("SELFSEMESTER_TEST_ENDPOINT") {
-            Ok(url) => Box::new(crate::claude::endpoint::EndpointRunner::new(
+            Ok(url) => Box::new(crate::claude::endpoint::EndpointRunner::single(
                 crate::claude::endpoint::Endpoint {
                     base_url: url,
                     model: std::env::var("SELFSEMESTER_TEST_MODEL").expect("set SELFSEMESTER_TEST_MODEL"),

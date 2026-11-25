@@ -3167,7 +3167,7 @@ dependencies = [
 
 [[package]]
 name = "selfsemester"
-version = "0.9.0"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "chrono",

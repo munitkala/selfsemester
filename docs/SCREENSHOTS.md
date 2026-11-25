@@ -267,33 +267,33 @@ qualification.
 Short patch notes for each version come first. Then appearance (mode, a light and a dark theme, accent colour, text
 size, density, corners), layout (sidebar, page width, start page), motion and performance (visual effects level and
 animation), study time and goals (tracking, daily goal, week start, calendar range, clearing history), shortcuts,
-Claude Code status and a test call, another AI service, and your data and backups. On a wide window the section
+Claude Code status and a test call, AI services, and your data and backups. On a wide window the section
 list sits on the left.
 
-### Another AI service
+### AI services
 
-![Settings, Another AI service, set up with a model on LM Studio and its report](../assets/screenshots/26-ai-service.png)
+![Settings, AI services: Claude Code plans and researches, a model in LM Studio writes and checks](../assets/screenshots/26-ai-service.png)
 
-For building courses with something other than Claude Code. Pick a service, fill in its address, key and model, and
-press **Check** to try it. **How well this can build a course** goes through each part of a build and marks it as
-working, reduced or not available, with the reason. Here a mid-sized model on the same computer passes the check but
-gets "Fair": no web search for the reading list, files limited to text and pictures, and a reminder to give the local
-server enough context. Claude Code stays the default until you press **Build with this service**.
+For using AI other than Claude Code. **Who does what** has a row for each job: planning and exams; lessons,
+assignments and marking; quick checks; and web research. Each can be Claude Code or any saved service, with its own
+model. Here Claude Code plans and researches while a model running in LM Studio on the same computer writes the
+lessons and runs the checks. Below that, the report for this mix, and the list of services.
 
-### New course with another AI service
+### Editing a service
 
-![The New course page showing the report for the AI service in use](../assets/screenshots/27-new-course-other-ai.png)
+![Editing a service, with More settings open](../assets/screenshots/28-service-editor.png)
 
-While another service is in use, the New course page names the model and repeats the short version of the report,
-so you know what to expect before planning starts.
+Start from a preset or from scratch, then choose the kind of API (seven kinds, from OpenAI-style to a program on
+this computer), the address, key and model. More settings has every detail of the request: where the key goes,
+extra headers, query parameters and body fields, the output limit, the timeout and the fallback models. Check saves
+and tries the service with one small question.
 
-### First launch
+### New course with other AI services
 
-![First-launch terms](../assets/screenshots/01-terms.png)
+![The New course page showing the report for the AI services in use](../assets/screenshots/27-new-course-other-ai.png)
 
-The key points of the terms, which everyone accepts once before using the app: no warranty, not professional
-advice, not a qualification, personal study only, where your data goes, academic integrity and backups. The full
-text is in [DISCLAIMER.md](../DISCLAIMER.md).
+While any job is on another service, the New course page names who writes the course and repeats the short version
+of the report, so you know what to expect before planning starts.
 
 ## Fits any window
 

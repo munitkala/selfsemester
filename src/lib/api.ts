@@ -17,8 +17,8 @@ export type JobSummary = {
 export type Progress = { stage: string; total_secs: number; remaining_secs: number; as_of: string; paused: boolean; by_you?: boolean };
 
 export type ClaudeStatus = {
-  /** "endpoint" when another AI service is set up instead; then `path` is its address and `version` the model */
-  provider: "claude_code" | "endpoint";
+  /** "endpoint" when services do every job (then `path` is the address and `version` the model), "mixed" when some do */
+  provider: "claude_code" | "endpoint" | "mixed";
   installed: boolean;
   path: string | null;
   version: string | null;
@@ -64,21 +64,45 @@ export type EndpointCheck = {
   seconds: number;
   message: string;
 };
-export type Endpoint = {
+export type ApiKind = "openai_chat" | "openai_responses" | "anthropic" | "gemini" | "ollama" | "custom" | "command";
+/** One AI service the learner set up. */
+export type Service = {
+  id: string;
+  name: string;
+  api: ApiKind;
   preset: string;
   base_url: string;
-  /** always empty coming back from the app; see AiView.key_set */
+  /** always empty coming back from the app; see ServiceView.key_set */
   api_key: string;
   model: string;
   strong_model: string;
   quick_model: string;
   sees_images: boolean;
+  web_search: boolean;
+  reads_pdfs: boolean;
+  auth_header: string;
+  auth_prefix: string;
+  auth_query: string;
+  headers: string;
+  query: string;
+  extra_body: string;
+  max_output: number | null;
+  context: number | null;
+  timeout_minutes: number | null;
+  custom_path: string;
+  custom_body: string;
+  custom_text_path: string;
+  command: string;
   check: EndpointCheck | null;
 };
 export type FitLevel = "full" | "reduced" | "none" | "unknown";
 export type FitArea = { id: string; label: string; level: FitLevel; note: string };
 export type Fit = { overall: "best" | "good" | "fair" | "limited" | "unknown"; headline: string; areas: FitArea[]; cost: string };
-export type AiView = { provider: "claude_code" | "endpoint"; endpoint: Endpoint; key_set: boolean; fit: Fit; claude_code_fit: Fit; endpoint_fit: Fit };
+export type ServiceView = Service & { key_set: boolean; fit: Fit };
+/** Who does one job: "claude_code" (or "") or a service id, and the model (empty for the usual one). */
+export type Target = { service: string; model: string };
+export type Roles = { plan: Target; write: Target; check: Target; research: Target };
+export type AiView = { services: ServiceView[]; roles: Roles; fit: Fit; claude_code_fit: Fit };
 
 export type AppStatus = { startup: StartupInfo; claude: ClaudeStatus; data_dir: string; user_dir: string; schema_version: number; jobs: JobSummary };
 
@@ -337,11 +361,12 @@ export const api = {
   noticeAccepted: () => invoke<boolean>("notice_accepted"),
   acceptNotice: () => invoke<void>("accept_notice"),
   ai: () => invoke<AiView>("ai_settings"),
-  /** key: undefined keeps the saved key, "" removes it */
-  saveEndpoint: (endpoint: Endpoint, key?: string) => invoke<AiView>("save_endpoint", { endpoint, key: key ?? null }),
-  useProvider: (provider: "claude_code" | "endpoint") => invoke<AiView>("use_provider", { provider }),
-  checkEndpoint: () => invoke<[EndpointCheck, AiView]>("check_endpoint"),
-  endpointModels: (endpoint: Endpoint, key?: string) => invoke<string[]>("endpoint_models", { endpoint, key: key ?? null }),
+  /** id "" adds a new service. key: undefined keeps the saved key, "" removes it */
+  saveService: (service: Service, key?: string) => invoke<AiView>("save_service", { service, key: key ?? null }),
+  deleteService: (id: string) => invoke<AiView>("delete_service", { id }),
+  setRoles: (roles: Roles) => invoke<AiView>("set_roles", { roles }),
+  checkService: (id: string, model?: string) => invoke<[EndpointCheck, AiView]>("check_service", { id, model: model ?? null }),
+  serviceModels: (service: Service, key?: string) => invoke<string[]>("service_models", { service, key: key ?? null }),
   test: () => invoke<{ job: { status: string; error: string | null; next_attempt_at: string | null }; result: { ok: boolean; message: string } | null }>("run_test_stage"),
   courses: () => invoke<CourseCard[]>("list_courses"),
   course: (id: string) => invoke<CourseView>("get_course", { id }),

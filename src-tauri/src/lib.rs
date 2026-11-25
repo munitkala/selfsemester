@@ -133,31 +133,38 @@ async fn tokio_sleep(ms: u64) {
 
 // ---------- which AI builds courses ----------
 
-/// The AI settings as the Settings page sees them. The API key itself never goes back to the page.
+/// One saved service as the Settings page sees it. The API key itself never goes back to the page.
+#[derive(Serialize)]
+struct ServiceView {
+    #[serde(flatten)]
+    service: Endpoint,
+    key_set: bool,
+    /// The report if this service did every job.
+    fit: claude::fit::Fit,
+}
+
+/// The AI settings as the Settings page sees them.
 #[derive(Serialize)]
 struct AiView {
-    provider: String,
-    endpoint: Endpoint,
-    key_set: bool,
-    /// For whichever is in use now.
+    services: Vec<ServiceView>,
+    roles: claude::endpoint::Roles,
+    /// For what's set up now.
     fit: claude::fit::Fit,
-    /// For each of the two, so the page can show both side by side.
+    /// For Claude Code alone, to compare with.
     claude_code_fit: claude::fit::Fit,
-    endpoint_fit: claude::fit::Fit,
 }
 
 fn ai_view(choice: &AiChoice) -> AiView {
-    let key_set = !choice.endpoint.api_key.trim().is_empty();
-    let mut endpoint = choice.endpoint.clone();
-    endpoint.api_key.clear();
-    AiView {
-        provider: if choice.uses_endpoint() { "endpoint".into() } else { "claude_code".into() },
-        endpoint,
-        key_set,
-        fit: claude::fit::assess(choice),
-        claude_code_fit: claude::fit::for_claude_code(),
-        endpoint_fit: claude::fit::for_endpoint(&choice.endpoint),
-    }
+    let services = choice
+        .services
+        .iter()
+        .map(|s| {
+            let mut shown = s.clone();
+            shown.api_key.clear();
+            ServiceView { key_set: !s.api_key.trim().is_empty(), fit: claude::fit::for_endpoint(s), service: shown }
+        })
+        .collect();
+    AiView { services, roles: choice.roles.clone(), fit: claude::fit::assess(choice), claude_code_fit: claude::fit::for_claude_code() }
 }
 
 #[tauri::command]
@@ -165,54 +172,78 @@ fn ai_settings(state: tauri::State<'_, AppState>) -> AiView {
     ai_view(&state.backend.choice())
 }
 
-/// Save the other service's settings. `key` None keeps the saved key; Some("") removes it.
+/// Add or update a service. An empty id adds a new one. `key` None keeps the saved key; Some("") removes it.
 #[tauri::command]
-fn save_endpoint(app: AppHandle, state: tauri::State<'_, AppState>, endpoint: Endpoint, key: Option<String>) -> Res<AiView> {
+fn save_service(app: AppHandle, state: tauri::State<'_, AppState>, service: Endpoint, key: Option<String>) -> Res<AiView> {
     let mut choice = state.backend.choice();
-    let old = choice.endpoint.clone();
-    let mut e = Endpoint {
-        base_url: endpoint.base_url.trim().trim_end_matches('/').to_string(),
-        model: endpoint.model.trim().to_string(),
-        strong_model: endpoint.strong_model.trim().to_string(),
-        quick_model: endpoint.quick_model.trim().to_string(),
-        api_key: key.map(|k| k.trim().to_string()).unwrap_or(old.api_key.clone()),
-        check: old.check.clone(),
-        ..endpoint
-    };
+    let old = choice.service(&service.id).cloned();
+    let mut s = service;
+    if old.is_none() {
+        s.id = choice.new_id();
+    }
+    for f in [&mut s.base_url, &mut s.model, &mut s.strong_model, &mut s.quick_model, &mut s.auth_header, &mut s.auth_query, &mut s.name] {
+        *f = f.trim().to_string();
+    }
+    s.base_url = s.base_url.trim_end_matches('/').to_string();
+    s.api_key = key.map(|k| k.trim().to_string()).unwrap_or_else(|| old.as_ref().map(|o| o.api_key.clone()).unwrap_or_default());
+    if claude::endpoint::bad_key(&s.api_key) {
+        return Err("The API key has a line break in it, which can't be right.".into());
+    }
     // A check only counts for the settings it was made with.
-    let same = (&e.base_url, &e.model, &e.strong_model, &e.api_key, e.sees_images) == (&old.base_url, &old.model, &old.strong_model, &old.api_key, old.sees_images);
-    if !same {
-        e.check = None;
+    s.check = old.as_ref().and_then(|o| {
+        let mut before = o.clone();
+        let mut now = s.clone();
+        before.check = None;
+        now.check = None;
+        before.name = String::new();
+        now.name = String::new();
+        (before == now).then(|| o.check.clone()).flatten()
+    });
+    match choice.services.iter_mut().find(|x| x.id == s.id) {
+        Some(slot) => *slot = s,
+        None => choice.services.push(s),
     }
-    // Everything else can be saved half-finished, but a key curl can't take would only fail later.
-    if crate::claude::endpoint::bad_key(&e.api_key) {
-        return Err("The API key has a character in it that can't be right (a quote, backslash or line break).".into());
-    }
-    choice.endpoint = e;
     state.backend.set_choice(choice.clone()).map_err(|e| format!("Couldn't save the AI settings: {e}"))?;
     changed(&app);
     Ok(ai_view(&choice))
 }
 
-/// Build with Claude Code ("claude_code") or the other service ("endpoint").
+/// Remove a service. Jobs it did go back to Claude Code.
 #[tauri::command]
-fn use_provider(app: AppHandle, state: tauri::State<'_, AppState>, provider: String) -> Res<AiView> {
-    if provider != "claude_code" && provider != "endpoint" {
-        return Err(format!("unknown provider {provider}"));
-    }
+fn delete_service(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Res<AiView> {
     let mut choice = state.backend.choice();
-    choice.provider = provider;
+    choice.services.retain(|s| s.id != id);
+    for t in [&mut choice.roles.plan, &mut choice.roles.write, &mut choice.roles.check, &mut choice.roles.research] {
+        if t.service == id {
+            *t = claude::endpoint::Target::default();
+        }
+    }
     state.backend.set_choice(choice.clone()).map_err(|e| format!("Couldn't save the AI settings: {e}"))?;
     changed(&app);
     Ok(ai_view(&choice))
 }
 
-/// Try the other service for real with a tiny question (and a tiny picture if it's meant to see them).
+/// Say who does each job.
 #[tauri::command]
-async fn check_endpoint(state: tauri::State<'_, AppState>) -> Res<(Check, AiView)> {
+fn set_roles(app: AppHandle, state: tauri::State<'_, AppState>, roles: claude::endpoint::Roles) -> Res<AiView> {
+    let mut choice = state.backend.choice();
+    for (job, t) in roles.all() {
+        if !t.is_claude_code() && choice.service(&t.service).is_none() {
+            return Err(format!("The {job} job points at a service that isn't there any more."));
+        }
+    }
+    choice.roles = roles;
+    state.backend.set_choice(choice.clone()).map_err(|e| format!("Couldn't save the AI settings: {e}"))?;
+    changed(&app);
+    Ok(ai_view(&choice))
+}
+
+/// Try a saved service for real with a tiny question (and a tiny picture if it's meant to see them).
+#[tauri::command]
+async fn check_service(state: tauri::State<'_, AppState>, id: String, model: Option<String>) -> Res<(Check, AiView)> {
     let backend = state.backend.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let c = backend.check_endpoint().map_err(err)?;
+        let c = backend.check_service(&id, model.as_deref().unwrap_or(""))?;
         Ok((c, ai_view(&backend.choice())))
     })
     .await
@@ -221,12 +252,11 @@ async fn check_endpoint(state: tauri::State<'_, AppState>) -> Res<(Check, AiView
 
 /// The models a service offers, for the picker. Uses the saved key when `key` is None.
 #[tauri::command]
-async fn endpoint_models(state: tauri::State<'_, AppState>, endpoint: Endpoint, key: Option<String>) -> Res<Vec<String>> {
+async fn service_models(state: tauri::State<'_, AppState>, service: Endpoint, key: Option<String>) -> Res<Vec<String>> {
     let backend = state.backend.clone();
-    let tmp = state.paths.data_dir.join("tmp");
-    let mut draft = endpoint;
-    draft.api_key = key.unwrap_or_else(|| backend.choice().endpoint.api_key);
-    tauri::async_runtime::spawn_blocking(move || backend.endpoint_models(&draft, tmp)).await.map_err(err)?
+    let mut draft = service;
+    draft.api_key = key.unwrap_or_else(|| backend.choice().service(&draft.id).map(|s| s.api_key.clone()).unwrap_or_default());
+    tauri::async_runtime::spawn_blocking(move || backend.service_models(&draft)).await.map_err(err)?
 }
 
 /// Queue state only (cheap: no Claude Code process is started).
@@ -755,10 +785,11 @@ pub fn run() {
             app_status,
             run_test_stage,
             ai_settings,
-            save_endpoint,
-            use_provider,
-            check_endpoint,
-            endpoint_models,
+            save_service,
+            delete_service,
+            set_roles,
+            check_service,
+            service_models,
             jobs_status,
             resume_now,
             notice_accepted,

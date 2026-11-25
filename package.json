@@ -1,6 +1,6 @@
 {
   "name": "selfsemester",
-  "version": "0.9.0",
+  "version": "1.0.0",
   "description": "Turns any subject into a full, deadline-based, graded course",
   "type": "module",
   "imports": {

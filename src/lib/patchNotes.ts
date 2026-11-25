@@ -5,6 +5,18 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "1.0.0",
+    date: "2026-11-24",
+    title: "Any AI service, for any job",
+    notes: [
+      "Save as many AI services as you like, of any kind: OpenAI-style, Responses, Anthropic, Gemini and Ollama APIs, a request you write yourself, or a program on this computer.",
+      "Choose who does each job: planning, writing and marking, quick checks and web research. Claude Code is still the default for all four.",
+      "Change anything about the request: key header or query parameter, extra headers, query and body fields, output limit, context size and timeout.",
+      "The Responses, Anthropic and Gemini APIs can search the web themselves, and Anthropic and Gemini get your PDFs.",
+      "Your settings from 0.9.0 carry over.",
+    ],
+  },
+  {
     version: "0.9.0",
     date: "2026-11-24",
     title: "Build with another AI service",

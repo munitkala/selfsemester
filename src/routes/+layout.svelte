@@ -96,7 +96,7 @@
       .status()
       .then((s) => {
         claudeProblem = s.claude.installed && s.claude.logged_in ? null : s.claude.problem;
-        aiName = s.claude.provider === "endpoint" ? "The AI" : "Claude";
+        aiName = s.claude.provider === "claude_code" ? "Claude" : "The AI";
         if (s.startup.result?.kind === "restored") restored = s.startup.result.created_at;
       })
       .catch(() => {});
