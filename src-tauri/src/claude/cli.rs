@@ -141,6 +141,14 @@ impl CliRunner {
         let out = self.command(exe).args(args).stdin(Stdio::null()).output().ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
+
+    /// What a command printed, whether or not it exited cleanly. `claude auth status` exits with an error when
+    /// nobody is signed in, but still prints the JSON that says so.
+    fn printed(&self, exe: &Path, args: &[&str]) -> Option<String> {
+        let out = self.command(exe).args(args).stdin(Stdio::null()).output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (!text.is_empty()).then_some(text)
+    }
 }
 
 impl ClaudeRunner for CliRunner {
@@ -158,7 +166,7 @@ impl ClaudeRunner for CliRunner {
             ..Default::default()
         };
         // Only `loggedIn` and `authMethod` are read; account details in this output are ignored and never stored.
-        match self.simple(exe, &["auth", "status", "--json"]).and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
+        match self.printed(exe, &["auth", "status", "--json"]).and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
             Some(v) => {
                 st.logged_in = v.get("loggedIn").and_then(|x| x.as_bool()).unwrap_or(false);
                 st.auth_method = v.get("authMethod").and_then(|x| x.as_str()).map(str::to_string);
@@ -292,6 +300,48 @@ mod tests {
         assert_eq!(time_limit(base, &r), base * 3);
         r.effort = None;
         assert_eq!(time_limit(base, &r), base * 2);
+    }
+
+    /// A stand-in for `claude` that answers `auth status` the way a signed-out Claude Code does: the JSON on
+    /// stdout, and exit code 1.
+    #[cfg(windows)]
+    fn signed_out_claude(dir: &Path) -> PathBuf {
+        let p = dir.join("claude.cmd");
+        let script = [
+            "@echo off",
+            r#"if "%1"=="--version" (echo 9.9.9 ^(Claude Code^) & exit /b 0)"#,
+            r#"echo {"loggedIn": false, "authMethod": "none"}"#,
+            "exit /b 1",
+        ];
+        std::fs::write(&p, script.join("\r\n")).unwrap();
+        p
+    }
+
+    #[cfg(not(windows))]
+    fn signed_out_claude(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join("claude");
+        let script = [
+            "#!/bin/sh",
+            r#"if [ "$1" = "--version" ]; then echo '9.9.9 (Claude Code)'; exit 0; fi"#,
+            r#"echo '{"loggedIn": false, "authMethod": "none"}'"#,
+            "exit 1",
+        ];
+        std::fs::write(&p, script.join("\n") + "\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
+    #[test]
+    fn signed_out_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = CliRunner::with_exe(signed_out_claude(dir.path()), dir.path().to_path_buf(), Duration::from_secs(5));
+        let st = r.status();
+        assert!(st.installed && !st.logged_in, "{st:?}");
+        assert_eq!(st.version.as_deref(), Some("9.9.9 (Claude Code)"));
+        let problem = st.problem.unwrap_or_default();
+        assert!(problem.contains("isn't signed in"), "{problem}");
+        assert!(!problem.contains("Update Claude Code"), "{problem}");
     }
 
     /// Pausing a course stops the call that's running instead of waiting minutes for it to finish.

@@ -16,7 +16,7 @@ And if you'd rather not use Claude Code, or only want it for some of the work, y
 a cloud API, a model running on your own computer, or a command-line program. You pick who does each job, and the app
 tells you up front how well that setup can build a course.
 
-> **Version 1.0.0.** It works end to end and is ready for everyday use, but it's still a young project with little
+> **Version 1.0.1.** It works end to end and is ready for everyday use, but it's still a young project with little
 > real-world mileage. If something breaks, please open an issue.
 
 <p align="center"><img src="assets/screenshots/04-today.png" width="860" alt="The Today page in a SelfSemester window"></p>
@@ -60,6 +60,8 @@ by the app and all the themes.
 
 ## What's new
 
+Version 1.0.1 fixes f-strings in the Python playground, says plainly when Claude Code isn't signed in, and
+keeps your own course materials working when your data moves to another folder or computer.
 Version 1.0.0 lets you use any AI service for any part of the work. Save as many services as you like, of any kind:
 OpenAI-style, OpenAI Responses, Anthropic, Gemini or Ollama APIs, a fully custom HTTP request, or a program on your
 computer. Then choose who plans, who writes and marks, who runs quick checks and who does web research. Every request

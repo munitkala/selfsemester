@@ -208,7 +208,7 @@ pub fn submit(
              to rethink so the next attempt can fix it.\n"
         );
     }
-    super::materials::attach(conn, &it.course_id, &mut req, super::materials::Use::Mark)?;
+    super::materials::attach(conn, paths, &it.course_id, &mut req, super::materials::Use::Mark)?;
     jobs::enqueue_with(conn, Some(&it.course_id), "mark", Some(&sub_id), jobs::PRIORITY_MARKING, &req).map_err(io)?;
     Ok(SubmitOutcome { submission_id: sub_id, status: "queued".into(), late_days: late })
 }

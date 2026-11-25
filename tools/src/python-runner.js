@@ -43,11 +43,11 @@
     "    if _n[0] % 2000 == 0:",
     "        _tick()",
     "    return _trace",
+    // The source goes straight to exec. Brython 3.15 mistranslates f-strings in code made with compile() first.
     "try:",
-    "    _code = compile(window.pyrunCode, '<string>', 'exec')",
     "    sys.settrace(_trace)",
     "    try:",
-    "        exec(_code, {'__name__': '__main__', 'input': _input})",
+    "        exec(window.pyrunCode, {'__name__': '__main__', 'input': _input})",
     "    finally:",
     "        sys.settrace(None)",
     "except SystemExit:",

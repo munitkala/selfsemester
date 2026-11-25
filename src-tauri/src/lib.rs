@@ -328,14 +328,14 @@ fn create_course(app: AppHandle, state: tauri::State<'_, AppState>, subject: Str
 
 #[tauri::command]
 fn answer_intake(app: AppHandle, state: tauri::State<'_, AppState>, id: String, answers: Value) -> Res<()> {
-    pipeline::answer_intake(&state.db.lock().unwrap(), &id, &answers)?;
+    pipeline::answer_intake(&state.db.lock().unwrap(), &state.paths, &id, &answers)?;
     changed(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn choose_bundle(app: AppHandle, state: tauri::State<'_, AppState>, id: String, choice: String) -> Res<()> {
-    pipeline::choose_bundle(&state.db.lock().unwrap(), &id, &choice)?;
+    pipeline::choose_bundle(&state.db.lock().unwrap(), &state.paths, &id, &choice)?;
     changed(&app);
     Ok(())
 }
@@ -439,7 +439,7 @@ fn today(state: tauri::State<'_, AppState>) -> Res<course::Today> {
 
 #[tauri::command]
 fn list_materials(state: tauri::State<'_, AppState>, course_id: String) -> Res<Vec<materials::Material>> {
-    materials::list(&state.db.lock().unwrap(), &course_id)
+    materials::list(&state.db.lock().unwrap(), &state.paths, &course_id)
 }
 
 #[tauri::command]
@@ -764,6 +764,13 @@ pub fn run() {
         })
         .setup(move |app| {
             worker.clone().spawn(Arc::new(TauriShell(app.handle().clone())));
+            // Tools fixed since they were installed are downloaded again, quietly, in the background.
+            let (tool_paths, tool_db, tool_app) = (audio_paths.clone(), audio_db.clone(), app.handle().clone());
+            std::thread::spawn(move || {
+                if !tools::update_outdated(&tool_paths, &tool_db, tools::default_source(&tool_paths).as_ref()).is_empty() {
+                    changed(&tool_app);
+                }
+            });
             let (conn, handle) = (audio_db.clone(), app.handle().clone());
             course::audio::spawn(
                 audio_paths.clone(),

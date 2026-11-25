@@ -1,5 +1,5 @@
 {
-  "release": "tools-2",
+  "release": "tools-3",
   "tools": [
     {
       "id": "maths",
@@ -214,8 +214,8 @@
         {
           "name": "python-runner.js",
           "from": "repo:tools/src/python-runner.js",
-          "sha256": "d5ab6002d2aa36cddb1d840269edafe351c5f40e7d809346ba82de9f96d589fc",
-          "bytes": 7150
+          "sha256": "0d91923c617b0de033ab31a21cd88d65ef9aa6087b3fccd00f11065c4927b16b",
+          "bytes": 7209
         },
         {
           "name": "LICENCE.txt",

@@ -295,6 +295,34 @@ pub fn install(paths: &AppPaths, id: &str, source: &dyn Source) -> Result<(), St
     result
 }
 
+/// Installed tools whose files aren't the ones this version of the app lists, because a later release fixed
+/// something in them. Being marked as installed isn't enough: the files themselves are checked.
+pub fn outdated(paths: &AppPaths) -> Vec<&'static Tool> {
+    installed(paths)
+        .into_iter()
+        .filter(|t| {
+            t.files.iter().any(|f| match std::fs::read(root(paths).join(&t.id).join(&f.name)) {
+                Ok(data) => format!("{:x}", Sha256::digest(&data)) != f.sha256,
+                Err(_) => true,
+            })
+        })
+        .collect()
+}
+
+/// Download again every installed tool that's out of date, one at a time, skipping any that can't be touched
+/// right now (a course is being built). A failed download leaves the old copy in place, to try at the next start.
+pub fn update_outdated(paths: &AppPaths, conn: &std::sync::Mutex<Connection>, source: &dyn Source) -> Vec<String> {
+    let mut updated = vec![];
+    for t in outdated(paths) {
+        let Ok(_busy) = begin(&conn.lock().unwrap(), &t.id) else { continue };
+        match install(paths, &t.id, source) {
+            Ok(()) => updated.push(t.id.clone()),
+            Err(e) => eprintln!("couldn't update the {} tool: {e}", t.id),
+        }
+    }
+    updated
+}
+
 pub fn remove(paths: &AppPaths, conn: &Connection, id: &str) -> Result<(), String> {
     let t = find(id).ok_or_else(|| format!("unknown tool {id}"))?;
     if !t.installable() {
@@ -408,6 +436,28 @@ mod tests {
         assert!(!v.tools.iter().any(|t| t.tool.id == "chess"), "a removed extra tool leaves the list");
         assert!(v.tools.iter().any(|t| t.tool.id == "geometry" && !t.installed), "common tools stay listed");
         assert!(lesson_guide(&installed(&paths)).contains("No tools"));
+    }
+
+    /// A tool fixed in a later release is downloaded again, even though it was already marked as installed.
+    #[test]
+    fn a_changed_tool_is_updated() {
+        let packed = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools-dist");
+        if !packed.join("chess--chess.js").is_file() {
+            eprintln!("skipped: run scripts/pack-tools.mjs first");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let paths = test_paths(dir.path());
+        let conn = std::sync::Mutex::new(crate::db::open_in_memory().unwrap());
+        install(&paths, "chess", &Folder(packed.clone())).unwrap();
+        assert!(outdated(&paths).is_empty());
+        // what an install from an older release looks like: marked installed, but one file differs
+        std::fs::write(file(&paths, "chess", "chess.js").unwrap(), "old version").unwrap();
+        assert_eq!(outdated(&paths).iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["chess"]);
+        assert!(update_outdated(&paths, &conn, &Fake(b"broken download".to_vec())).is_empty(), "a bad download changes nothing");
+        assert_eq!(std::fs::read_to_string(file(&paths, "chess", "chess.js").unwrap()).unwrap(), "old version");
+        assert_eq!(update_outdated(&paths, &conn, &Folder(packed)), ["chess"]);
+        assert!(outdated(&paths).is_empty());
     }
 
     #[test]

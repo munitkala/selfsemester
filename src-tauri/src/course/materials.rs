@@ -78,10 +78,12 @@ fn course_exists(conn: &Connection, course_id: &str) -> Result<(), String> {
     if n == 0 { Err("No such course.".into()) } else { Ok(()) }
 }
 
+/// Saves just the file's name: the copy always lives in the course's materials folder, wherever that is today.
 fn insert(conn: &Connection, course_id: &str, kind: &str, name: &str, path: &Path, bytes: u64) -> Result<(), String> {
+    let file = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
     conn.execute(
         "INSERT INTO materials(id, course_id, kind, name, path, bytes, added_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-        params![new_id(), course_id, kind, name, path.display().to_string(), bytes as i64, db::now_utc()],
+        params![new_id(), course_id, kind, name, file, bytes as i64, db::now_utc()],
     )
     .map_err(io)?;
     Ok(())
@@ -132,7 +134,20 @@ pub fn add_note(conn: &Connection, paths: &AppPaths, course_id: &str, title: &st
     insert(conn, course_id, "note", &title, &dest, body.len() as u64)
 }
 
-pub fn list(conn: &Connection, course_id: &str) -> Result<Vec<Material>, String> {
+/// Where a material's copy is now. Rows from before 1.0.1 hold the whole path from the computer and folder they
+/// were added on, which broke once the data moved (a restored backup, a demo, another computer). Only the file
+/// name is used, so old and new rows both point into the course's materials folder as it is today.
+pub fn locate(paths: &AppPaths, course_id: &str, stored: &str) -> Option<PathBuf> {
+    // Split on both kinds of slash: a path saved on Windows has to work on Linux too.
+    let name = stored.rsplit(['/', '\\']).next().unwrap_or("").trim();
+    if name.is_empty() || name == "." || name == ".." {
+        return None;
+    }
+    Some(paths.course_dir(course_id).join("materials").join(name))
+}
+
+/// A course's materials, with each path pointing at the copy in the course folder.
+pub fn list(conn: &Connection, paths: &AppPaths, course_id: &str) -> Result<Vec<Material>, String> {
     let mut st = conn
         .prepare("SELECT id, kind, name, path, bytes, added_at FROM materials WHERE course_id=?1 ORDER BY added_at, id")
         .map_err(io)?;
@@ -141,18 +156,22 @@ pub fn list(conn: &Connection, course_id: &str) -> Result<Vec<Material>, String>
             Ok(Material { id: r.get(0)?, kind: r.get(1)?, name: r.get(2)?, path: r.get(3)?, bytes: r.get(4)?, added_at: r.get(5)? })
         })
         .map_err(io)?;
-    rows.collect::<Result<_, _>>().map_err(io)
+    let all: Vec<Material> = rows.collect::<Result<_, _>>().map_err(io)?;
+    Ok(all
+        .into_iter()
+        .filter_map(|mut m| {
+            m.path = locate(paths, course_id, &m.path)?.display().to_string();
+            Some(m)
+        })
+        .collect())
 }
 
-/// One material, but only if its copy really sits in that course's materials folder.
+/// One material and where its copy is in that course's materials folder.
 fn owned(conn: &Connection, paths: &AppPaths, id: &str) -> Result<(String, PathBuf), String> {
-    let (course, path): (String, String) = conn
+    let (course, stored): (String, String) = conn
         .query_row("SELECT course_id, path FROM materials WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(|_| "That material is gone.".to_string())?;
-    let path = PathBuf::from(path);
-    if !path.starts_with(paths.course_dir(&course).join("materials")) {
-        return Err("That file isn't in the course folder.".into());
-    }
+    let path = locate(paths, &course, &stored).ok_or("That file isn't in the course folder.")?;
     Ok((course, path))
 }
 
@@ -182,8 +201,8 @@ pub enum Use {
 }
 
 /// Point a stage at the learner's materials: list them in the prompt, allow Read, and give access to the folder.
-pub fn attach(conn: &Connection, course_id: &str, req: &mut StageRequest, use_: Use) -> Result<(), String> {
-    let items: Vec<Material> = list(conn, course_id)?.into_iter().filter(|m| Path::new(&m.path).is_file()).collect();
+pub fn attach(conn: &Connection, paths: &AppPaths, course_id: &str, req: &mut StageRequest, use_: Use) -> Result<(), String> {
+    let items: Vec<Material> = list(conn, paths, course_id)?.into_iter().filter(|m| Path::new(&m.path).is_file()).collect();
     if items.is_empty() {
         return Ok(());
     }
@@ -249,7 +268,7 @@ mod tests {
         add_files(&conn, &paths, &id, &[src]).unwrap(); // same name again gets "(2)"
         add_note(&conn, &paths, &id, "What I know", "  I know matrix multiplication.  ").unwrap();
 
-        let all = list(&conn, &id).unwrap();
+        let all = list(&conn, &paths, &id).unwrap();
         assert_eq!(all.iter().map(|m| m.kind.as_str()).collect::<Vec<_>>(), ["file", "image", "file", "note"]);
         assert!(all[2].path.ends_with("week1 notes (2).md"));
         let note = std::fs::read_to_string(&all[3].path).unwrap();
@@ -260,7 +279,7 @@ mod tests {
 
         remove(&conn, &paths, &all[0].id).unwrap();
         assert!(!Path::new(&all[0].path).exists());
-        assert_eq!(list(&conn, &id).unwrap().len(), 3);
+        assert_eq!(list(&conn, &paths, &id).unwrap().len(), 3);
         assert!(file_of(&conn, &paths, &all[0].id).is_err());
     }
 
@@ -275,14 +294,14 @@ mod tests {
         assert!(add_files(&conn, &paths, &id, &[tmp.path().join("missing.pdf")]).is_err());
         assert!(add_files(&conn, &paths, "nope", &[ok]).is_err());
         assert!(add_note(&conn, &paths, &id, "Empty", "   ").is_err());
-        assert!(list(&conn, &id).unwrap().is_empty());
+        assert!(list(&conn, &paths, &id).unwrap().is_empty());
     }
 
     #[test]
     fn attach_adds_read_access_only_when_there_is_something() {
         let (tmp, paths, conn, id) = setup();
         let mut r = blank_req();
-        attach(&conn, &id, &mut r, Use::Write).unwrap();
+        attach(&conn, &paths, &id, &mut r, Use::Write).unwrap();
         assert!(r.tools.is_empty() && r.add_dirs.is_empty() && r.prompt == "Write the unit.");
 
         let pdf = tmp.path().join("textbook ch1.pdf");
@@ -291,7 +310,7 @@ mod tests {
         add_note(&conn, &paths, &id, "Exam board", "Use the AQA notation.").unwrap();
         let mut r = blank_req();
         r.tools.push("Read".into());
-        attach(&conn, &id, &mut r, Use::Mark).unwrap();
+        attach(&conn, &paths, &id, &mut r, Use::Mark).unwrap();
         assert_eq!(r.tools, ["Read"]);
         assert_eq!(r.add_dirs, [paths.course_dir(&id).join("materials").display().to_string()]);
         assert!(r.prompt.contains("file textbook ch1.pdf: ") && r.prompt.contains("note \"Exam board\""));
@@ -309,4 +328,33 @@ mod tests {
         assert_eq!(n, 0);
         assert!(!paths.course_dir(&id).exists());
     }
+
+    /// A course whose data came from somewhere else (a backup, a demo, another computer) still finds its files.
+    #[test]
+    fn materials_saved_elsewhere_are_found() {
+        let (_tmp, paths, conn, id) = setup();
+        let dir = paths.ensure_course(&id).unwrap().join("materials");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("syllabus.md"), "Week 1: vectors").unwrap();
+        std::fs::write(dir.join("notes.txt"), "eigen").unwrap();
+        // what 1.0.0 and earlier saved: the whole path, from a Windows computer and from a Linux one
+        conn.execute(
+            r#"INSERT INTO materials(id, course_id, kind, name, path, bytes, added_at) VALUES
+             ('m1', ?1, 'file', 'Syllabus', 'C:\Users\someone\AppData\Local\SelfSemester\courses\x\materials\syllabus.md', 15, 'x'),
+             ('m2', ?1, 'file', 'Notes', '/home/someone/.local/share/SelfSemester/courses/x/materials/notes.txt', 5, 'x'),
+             ('m3', ?1, 'file', 'Odd', '..', 1, 'x')"#,
+            [&id],
+        )
+        .unwrap();
+        let all = list(&conn, &paths, &id).unwrap();
+        assert_eq!(all.len(), 2, "a name that would leave the folder is dropped");
+        assert!(all.iter().all(|m| Path::new(&m.path).is_file() && m.path.starts_with(&dir.display().to_string())), "{all:?}");
+        assert_eq!(file_of(&conn, &paths, "m1").unwrap(), dir.join("syllabus.md"));
+        assert!(file_of(&conn, &paths, "m3").is_err());
+        // new rows keep just the name
+        add_note(&conn, &paths, &id, "Exam tips", "Show working").unwrap();
+        let stored: String = conn.query_row("SELECT path FROM materials WHERE name='Exam tips'", [], |r| r.get(0)).unwrap();
+        assert_eq!(stored, "Exam tips.md");
+    }
 }
+
