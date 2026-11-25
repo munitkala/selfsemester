@@ -7,6 +7,25 @@ are listed under **Unreleased**.
 
 Nothing yet.
 
+## 1.0.1 (2026-11-24)
+
+### Fixes
+
+- **f-strings work in the Python playground.** Any program with an f-string such as `f"Hello, {name}"` stopped with
+  "JavascriptError: missing ) after argument list". Brython 3.15 mistranslates f-strings in code that's been through
+  `compile()` first; the playground now hands your code straight to `exec`. Error messages still point at your own
+  line, and a loop that never ends is still stopped after 5 seconds. The fix ships in the tools-3 download.
+- **Installed tools now update themselves.** A tool counted as installed as long as it was there, so a fixed version
+  never reached anyone who already had it. At start-up the app now checks each installed tool's files against the
+  ones it expects and quietly downloads again any that changed. If that download fails, the old copy stays and it
+  tries again next time.
+- **"Not signed in" says so.** With Claude Code signed out, Settings said "Couldn't read `claude auth status`. Update
+  Claude Code" instead of telling you to sign in. Claude Code exits with an error in that case while still printing
+  its answer, and that answer was being thrown away.
+- **Your own materials survive a move.** Files added under "Your materials" were saved with their full path, so they
+  went missing after restoring a backup on another computer, opening a demo course, or moving between Windows and
+  Linux. Only the file name is kept now, and older entries find their files in the course's materials folder too.
+
 ## 1.0.0 (2026-11-24)
 
 ### Any AI service, for any job

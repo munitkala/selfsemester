@@ -5,6 +5,17 @@ export type PatchNote = { version: string; date: string; title: string; notes: s
 
 export const patchNotes: PatchNote[] = [
   {
+    version: "1.0.1",
+    date: "2026-11-24",
+    title: "Fixes",
+    notes: [
+      "f-strings work in the Python playground.",
+      "Installed tools update themselves when a newer version fixes something in them.",
+      "When Claude Code isn't signed in, Settings now says so instead of asking you to update it.",
+      "Your own course materials keep working after your data moves to another folder or computer.",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-11-24",
     title: "Any AI service, for any job",

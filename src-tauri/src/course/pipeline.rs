@@ -73,29 +73,29 @@ fn course_text(conn: &Connection, id: &str) -> Result<(String, String, Option<St
     .map_err(io)
 }
 
-fn queue_plan(conn: &Connection, id: &str) -> Result<(), String> {
+fn queue_plan(conn: &Connection, paths: &AppPaths, id: &str) -> Result<(), String> {
     let (subject, notes, answers, bundle) = course_text(conn, id)?;
     let answers: Value = answers.and_then(|a| serde_json::from_str(&a).ok()).unwrap_or(Value::Null);
     set_status(conn, id, "scoping")?;
     let mut req = prompts::plan(&subject, &notes, &answers, bundle.as_deref());
-    materials::attach(conn, id, &mut req, materials::Use::Plan)?;
+    materials::attach(conn, paths, id, &mut req, materials::Use::Plan)?;
     jobs::enqueue_with(conn, Some(id), "plan", None, jobs::PRIORITY_INTERACTIVE, &req).map_err(io)?;
     Ok(())
 }
 
 /// Step 2: the learner answers the intake questions. Claude plans the course and its readiness report.
-pub fn answer_intake(conn: &Connection, id: &str, answers: &Value) -> Result<(), String> {
+pub fn answer_intake(conn: &Connection, paths: &AppPaths, id: &str, answers: &Value) -> Result<(), String> {
     conn.execute("UPDATE courses SET intake_json=?2 WHERE id=?1", params![id, answers.to_string()]).map_err(io)?;
-    queue_plan(conn, id)
+    queue_plan(conn, paths, id)
 }
 
 /// The plan found a bundle of courses; the learner picked how to take it. Re-plan with that choice.
-pub fn choose_bundle(conn: &Connection, id: &str, choice: &str) -> Result<(), String> {
+pub fn choose_bundle(conn: &Connection, paths: &AppPaths, id: &str, choice: &str) -> Result<(), String> {
     if !matches!(choice, "combined" | "first" | "sequence") {
         return Err("Unknown choice.".into());
     }
     conn.execute("UPDATE courses SET bundle_choice=?2 WHERE id=?1", params![id, choice]).map_err(io)?;
-    queue_plan(conn, id)
+    queue_plan(conn, paths, id)
 }
 
 pub fn plan_of(conn: &Connection, id: &str) -> Result<Plan, String> {
@@ -191,7 +191,7 @@ fn queue_unit(conn: &Connection, paths: &AppPaths, id: &str, key: &str, feedback
     let tool_guide = crate::tools::lesson_guide(&crate::tools::installed(paths));
     let mut req = prompts::unit_styled(&plan, &srcs, key, feedback, &tool_guide, &build.content);
     build.for_unit(&mut req, plan.units.iter().any(|u| u.key == key && u.exam != "none"));
-    materials::attach(conn, id, &mut req, materials::Use::Write)?;
+    materials::attach(conn, paths, id, &mut req, materials::Use::Write)?;
     jobs::enqueue_with(conn, Some(id), "unit", Some(key), jobs::PRIORITY_COMPILE, &req).map_err(io)?;
     Ok(())
 }
@@ -520,7 +520,7 @@ pub(crate) mod tests {
         let sealer = Sealer::load(&conn).unwrap();
         let id = create(&conn, "Quantum mechanics 1", "").unwrap();
         answer(&conn, &paths, &sealer, json!({"questions":[]}));
-        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer_intake(&conn, &paths, &id, &json!({})).unwrap();
         answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
         let quick = crate::course::build::preset(crate::course::build::Level::Quick);
         approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, &quick).unwrap();
@@ -556,7 +556,7 @@ pub(crate) mod tests {
         let sealer = Sealer::load(&conn).unwrap();
         let id = create(&conn, "Quantum mechanics 1", "").unwrap();
         answer(&conn, &paths, &sealer, json!({"questions":[]}));
-        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer_intake(&conn, &paths, &id, &json!({})).unwrap();
         answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
         let mut b = BuildSettings::default();
         b.content.skip = crate::course::build::WORK_KINDS.iter().map(|k| k.to_string()).collect();
@@ -599,7 +599,7 @@ pub(crate) mod tests {
         let sealer = Sealer::load(&conn).unwrap();
         let id = create(&conn, "Quantum mechanics 1", "").unwrap();
         answer(&conn, &paths, &sealer, json!({"questions":[]}));
-        answer_intake(&conn, &id, &json!({})).unwrap();
+        answer_intake(&conn, &paths, &id, &json!({})).unwrap();
         answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
         let start = Utc::now().date_naive() + Duration::days(3);
         approve(&conn, &id, start, &LatePolicy::LockZero, Strictness::Structured, true, &BuildSettings::default()).unwrap();
@@ -616,7 +616,7 @@ pub(crate) mod tests {
     fn compiling_course(paths: &AppPaths, conn: &Connection, sealer: &Sealer, build: &BuildSettings) -> String {
         let id = create(conn, "Quantum mechanics 1", "").unwrap();
         answer(conn, paths, sealer, json!({"questions":[]}));
-        answer_intake(conn, &id, &json!({})).unwrap();
+        answer_intake(conn, paths, &id, &json!({})).unwrap();
         answer(conn, paths, sealer, crate::course::prompts::tests::sample_plan());
         approve(conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, build).unwrap();
         answer(conn, paths, sealer, json!({"sources":[]}));
@@ -723,7 +723,7 @@ pub(crate) mod tests {
         answer(&conn, &paths, &sealer, json!({"questions":[{"id":"goal","text":"Goal?","kind":"text","options":[]}]}));
         assert_eq!(status(&conn, &id), "answering");
 
-        answer_intake(&conn, &id, &json!({"goal":"learn"})).unwrap();
+        answer_intake(&conn, &paths, &id, &json!({"goal":"learn"})).unwrap();
         assert_eq!(status(&conn, &id), "scoping");
         answer(&conn, &paths, &sealer, crate::course::prompts::tests::sample_plan());
         assert_eq!(status(&conn, &id), "review");
@@ -817,7 +817,7 @@ pub(crate) mod tests {
         let (paths, conn, sealer) = home("review");
         let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
         answer(&conn, &paths, &sealer, intake.clone());
-        answer_intake(&conn, &id, &answers).unwrap();
+        answer_intake(&conn, &paths, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, plan.clone());
         drop(conn);
 
@@ -826,7 +826,7 @@ pub(crate) mod tests {
         let (paths, conn, sealer) = home("building");
         let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
         answer(&conn, &paths, &sealer, intake.clone());
-        answer_intake(&conn, &id, &answers).unwrap();
+        answer_intake(&conn, &paths, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, plan.clone());
         approve(&conn, &id, Utc::now().date_naive(), &LatePolicy::LockZero, Strictness::Structured, true, &BuildSettings::default()).unwrap();
         answer(&conn, &paths, &sealer, sources.clone());
@@ -839,7 +839,7 @@ pub(crate) mod tests {
         one_unit["units"] = json!([plan["units"][0].clone()]);
         let id = create(&conn, "Git basics", "Keep it to one week.").unwrap();
         answer(&conn, &paths, &sealer, intake);
-        answer_intake(&conn, &id, &answers).unwrap();
+        answer_intake(&conn, &paths, &id, &answers).unwrap();
         answer(&conn, &paths, &sealer, one_unit);
         let start = (Utc::now() - Duration::days(1)).date_naive();
         approve(&conn, &id, start, &LatePolicy::Penalty { per_day: 10.0, max_days: 2 }, Strictness::Structured, true, &BuildSettings::default()).unwrap();
@@ -864,11 +864,13 @@ pub(crate) mod tests {
 
     #[test]
     fn bundle_choice_replans() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = crate::tools::test_paths(dir.path());
         let conn = db::open_in_memory().unwrap();
         let id = create(&conn, "QM 1, 2 and 3", "").unwrap();
-        choose_bundle(&conn, &id, "first").unwrap();
+        choose_bundle(&conn, &paths, &id, "first").unwrap();
         assert_eq!(status(&conn, &id), "scoping");
-        assert!(choose_bundle(&conn, &id, "weird").is_err());
+        assert!(choose_bundle(&conn, &paths, &id, "weird").is_err());
     }
 
     #[test]

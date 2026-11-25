@@ -188,7 +188,7 @@ pub fn send(conn: &Connection, paths: &AppPaths, sealer: &Sealer, item_id: &str,
         add_dirs,
         effort: None,
     };
-    super::materials::attach(conn, &course_id, &mut req, super::materials::Use::Mark)?;
+    super::materials::attach(conn, paths, &course_id, &mut req, super::materials::Use::Mark)?;
     jobs::enqueue_with(conn, Some(&course_id), "review", Some(item_id), jobs::PRIORITY_INTERACTIVE, &req).map_err(io)?;
     Ok(())
 }
