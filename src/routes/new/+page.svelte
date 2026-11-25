@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { api, type AiView } from "#lib/api.ts";
+  import { jobsOnClaude, whoDoes } from "#lib/ai.ts";
   import Icon from "#lib/Icon.svelte";
   import FitReport from "#lib/FitReport.svelte";
 
@@ -12,7 +13,7 @@
 
   // Shown only when another AI service is set up, so the learner knows what they'll get before planning starts.
   let ai = $state<AiView | null>(null);
-  const other = $derived(ai?.provider === "endpoint");
+  const other = $derived(!!ai && jobsOnClaude(ai.roles) < 4);
   onMount(() => {
     api.ai().then((v) => (ai = v)).catch(() => {});
   });
@@ -39,7 +40,7 @@
 {#if other && ai}
   <section class="card">
     <div class="spread">
-      <h2>Built with {ai.endpoint.model || "another AI service"}</h2>
+      <h2>Written by {whoDoes(ai, "write")}</h2>
       <a href="/settings#ai-service" class="small">Change</a>
     </div>
     <FitReport fit={ai.fit} compact />

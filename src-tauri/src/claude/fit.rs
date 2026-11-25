@@ -4,7 +4,9 @@
 //! good the course is depends on the model. The model's size is a guess from its name, which is rough, so the
 //! report says so; the real test is the Check button, which asks the model something and looks at the answer.
 
-use super::endpoint::{AiChoice, Endpoint};
+use super::Tier;
+use super::endpoint::{AiChoice, Api, Endpoint, Roles, Target};
+use super::styles::Style;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -110,9 +112,197 @@ fn writing(size: Size, what: &str) -> (&'static str, String) {
     }
 }
 
+/// Who does one job, as far as the report cares.
+enum Who<'a> {
+    Claude,
+    Service(&'a Endpoint, String),
+}
+
+impl Who<'_> {
+    fn name(&self) -> String {
+        match self {
+            Who::Claude => "Claude Code".into(),
+            Who::Service(s, m) if m.is_empty() => s.display_name(),
+            Who::Service(s, m) => format!("{} ({m})", s.display_name()),
+        }
+    }
+}
+
+fn who<'a>(choice: &'a AiChoice, target: &Target, tier: Tier) -> Who<'a> {
+    match choice.resolve(target, tier) {
+        Some((s, m)) => Who::Service(s, m),
+        None => Who::Claude,
+    }
+}
+
+fn size_of(w: &Who) -> Option<Size> {
+    match w {
+        Who::Claude => None,
+        Who::Service(_, m) => Some(guess_size(m)),
+    }
+}
+
 /// The report for whatever is set up now.
 pub fn assess(choice: &AiChoice) -> Fit {
-    if choice.uses_endpoint() { for_endpoint(&choice.endpoint) } else { for_claude_code() }
+    if !choice.uses_endpoint() {
+        return for_claude_code();
+    }
+    let plan = who(choice, &choice.roles.plan, Tier::Opus);
+    let write = who(choice, &choice.roles.write, Tier::Sonnet);
+    let research = who(choice, &choice.roles.research, Tier::Sonnet);
+    let claude = for_claude_code();
+    let claude_area = |id: &str| claude.areas.iter().find(|a| a.id == id).cloned().expect("Claude Code covers every area");
+
+    let job = |id: &str, label: &str, w: &Who, what: &str| match w {
+        Who::Claude => claude_area(id),
+        Who::Service(_, m) => {
+            let (level, note) = writing(guess_size(m), what);
+            area(id, label, level, format!("{}: {note}", w.name()))
+        }
+    };
+    let mut areas = vec![
+        job("plan", "Planning and exams", &plan, "the syllabus and exams"),
+        job("lessons", "Lessons and assignments", &write, "lessons and assignments"),
+        format_area(&choice.services_in_use()),
+    ];
+
+    let searches = match &research {
+        Who::Claude => true,
+        Who::Service(s, _) => s.searches_web(),
+    };
+    areas.push(match &research {
+        Who::Claude => claude_area("sources"),
+        Who::Service(..) if searches => area("sources", "Reading list", "full", format!("{} searches the web itself for the reading list.", research.name())),
+        Who::Service(..) => area(
+            "sources",
+            "Reading list",
+            "reduced",
+            format!("{} can't search the web here, so it suggests sources from memory and links aren't checked. Some may be broken.", research.name()),
+        ),
+    });
+    areas.push(match &research {
+        Who::Claude => claude_area("research"),
+        Who::Service(..) if searches => area("research", "Research while writing", "full", format!("Thorough and Max builds send their research steps to {}, which searches the web.", research.name())),
+        Who::Service(..) => area("research", "Research while writing", "none", "Thorough and Max builds can't look anything up; lessons come from what the model already knows."),
+    });
+
+    areas.push(match (&write, size_of(&write)) {
+        (Who::Claude, _) => claude_area("marking"),
+        (_, Some(Size::Large)) => area("marking", "Marking typed work", "full", format!("{} should mark fairly against the rubric. You can still question any mark in Review.", write.name())),
+        (_, Some(Size::Unknown)) => area("marking", "Marking typed work", "unknown", "Depends on the model. Check a few marks in Review early on."),
+        _ => area("marking", "Marking typed work", "reduced", "Marks may be off now and then. Use Review to question any that look wrong."),
+    });
+
+    let (photos, files) = match &write {
+        Who::Claude => (claude_area("photos"), claude_area("files")),
+        Who::Service(s, _) => service_files(s),
+    };
+    areas.push(photos);
+    areas.push(files);
+
+    let used = choice.services_in_use();
+    if used.iter().any(|s| s.is_local() && s.api != Api::Command) {
+        areas.push(area(
+            "context",
+            "Room for long requests",
+            "unknown",
+            "Local servers often start with a small context window, and course steps send long requests. Set it to at least 32,000 tokens (Ollama: the Context size setting here, or num_ctx; LM Studio: Context Length) or answers get cut off.",
+        ));
+    }
+
+    let level = |id: &str| areas.iter().find(|a| a.id == id).map(|a| a.level.clone()).unwrap_or_default();
+    let sizes: Vec<Size> = [size_of(&plan), size_of(&write)].into_iter().flatten().collect();
+    let extras = if searches { "" } else { ", but the reading list isn't checked on the web and there's no research while writing" };
+    let (overall, headline) = if level("format") == "none" {
+        ("limited", "This setup can't build courses yet. Fix what Check found and try again.".to_string())
+    } else if sizes.contains(&Size::Small) {
+        ("limited", "It can build a course, but a small model will make a rough one. Use a bigger model for anything you care about.".to_string())
+    } else if level("format") == "unknown" {
+        ("unknown", "Press Check on each service to see how well this works. Until then, this is a guess from the model names.".to_string())
+    } else if sizes.iter().all(|s| *s == Size::Large) {
+        ("good", format!("Good. Courses should build well{extras}."))
+    } else {
+        ("fair", format!("Usable. Expect simpler lessons and exams than with a large model{extras}."))
+    };
+    Fit { overall: overall.into(), headline, areas, cost: cost(choice) }
+}
+
+/// The report for one service doing every job, shown while it's being set up.
+pub fn for_endpoint(e: &Endpoint) -> Fit {
+    let mut e = e.clone();
+    if e.id.is_empty() {
+        e.id = "this".into();
+    }
+    let all = Target { service: e.id.clone(), model: String::new() };
+    let choice = AiChoice { services: vec![e.clone()], roles: Roles::every(all), ..Default::default() };
+    if let Some(p) = e.problem() {
+        return Fit { overall: "limited".into(), headline: format!("Not set up yet. {p}"), areas: vec![], cost: cost(&choice) };
+    }
+    assess(&choice)
+}
+
+/// Whether the app gets answers it can use, from each service's last Check. The worst one counts.
+fn format_area(used: &[&Endpoint]) -> Area {
+    let label = "Answers the app can use";
+    let rank = |a: &Area| match a.level.as_str() {
+        "none" => 0,
+        "unknown" => 1,
+        "reduced" => 2,
+        _ => 3,
+    };
+    used.iter()
+        .map(|s| {
+            let name = s.display_name();
+            match &s.check {
+                None => area("format", label, "unknown", format!("{name} hasn't been checked yet. Press Check to try it.")),
+                Some(c) if !c.reached => area("format", label, "none", format!("Couldn't reach {name}: {}", c.message)),
+                Some(c) if !c.json_ok => area("format", label, "none", format!("{name}: {}", c.message)),
+                Some(c) if c.format == "prompt" && s.api.style().is_some_and(|st| st != Style::Anthropic) => area(
+                    "format",
+                    label,
+                    "reduced",
+                    format!("{name} worked, but ignores the setting that asks for JSON, so the app asks in words. Some steps may need a second try."),
+                ),
+                Some(c) => area("format", label, "full", format!("{name} worked when checked ({} s for a short answer).", c.seconds)),
+            }
+        })
+        .min_by_key(rank)
+        .unwrap_or_else(|| area("format", label, "full", "Claude Code checks every answer against the shape the app needs."))
+}
+
+/// Photos and the learner's own files, for the service that writes and marks.
+fn service_files(s: &Endpoint) -> (Area, Area) {
+    let pdfs = s.sends_pdfs();
+    let pdf_note = if pdfs { "PDFs are sent along too; Word files can't be opened." } else { "PDFs and Word files can't be opened, so hand those in as text or photos." };
+    let photos = match (s.sees_images, s.check.as_ref().and_then(|c| c.images_ok), s.api) {
+        (_, _, Api::Command | Api::Custom) => area("photos", "Marking photos and uploads", "none", "Pictures can't be sent to this kind of service, so photos of your work won't be marked. Typed answers still can."),
+        (false, ..) => area("photos", "Marking photos and uploads", "none", "Photos and scans of handwritten work can't be marked. Typed answers still can. Turn on \"This model can see images\" if it can."),
+        (true, Some(false), _) => area("photos", "Marking photos and uploads", "none", "It couldn't see the test picture, so photos won't be marked."),
+        (true, None, _) => area("photos", "Marking photos and uploads", "unknown", format!("Pictures will be sent along. Press Check to make sure the model can see them. {pdf_note}")),
+        (true, Some(true), _) => area("photos", "Marking photos and uploads", "reduced", format!("Photos and pictures are marked. {pdf_note}")),
+    };
+    let files = if pdfs {
+        area("files", "Your own materials", "reduced", "Text files, pictures and PDFs are sent with each request. Word files can't be opened, so paste what you need into a note.")
+    } else {
+        area("files", "Your own materials", "reduced", "Text files (notes, .txt, .md, .csv, code) are sent with each request. PDFs and Word files can't be opened, so paste what you need into a note.")
+    };
+    (photos, files)
+}
+
+/// What it costs, for Claude Code and each service in use.
+fn cost(choice: &AiChoice) -> String {
+    let mut parts = vec![];
+    if choice.uses_claude_code() {
+        parts.push("Claude Code counts toward your Claude plan's usage limits, with no extra charges.".to_string());
+    }
+    for s in choice.services_in_use() {
+        parts.push(if s.is_local() {
+            format!("{} runs on your own computer or network, so there are no charges. Expect it to be slower.", s.display_name())
+        } else {
+            format!("{} bills you for each use, at its own rates. A whole course can take a lot of tokens, and SelfSemester can't see your balance.", s.display_name())
+        });
+    }
+    parts.join(" ")
 }
 
 pub fn for_claude_code() -> Fit {
@@ -131,81 +321,6 @@ pub fn for_claude_code() -> Fit {
         ],
         cost: "Counts toward your Claude plan's usage limits. No extra charges.".into(),
     }
-}
-
-pub fn for_endpoint(e: &Endpoint) -> Fit {
-    let strong = guess_size(e.model_for(super::Tier::Opus));
-    let main = guess_size(e.model_for(super::Tier::Sonnet));
-    let cost = if e.is_local() {
-        "Runs on your own computer or network, so there are no charges. Expect it to be slower.".to_string()
-    } else {
-        "Billed by the service for each use, at its own rates. A whole course can take a lot of tokens, and SelfSemester can't see your balance.".to_string()
-    };
-
-    if let Some(p) = e.problem() {
-        return Fit { overall: "limited".into(), headline: format!("Not set up yet. {p}"), areas: vec![], cost };
-    }
-
-    let (plan_level, plan_note) = writing(strong, "the syllabus and exams");
-    let (lesson_level, lesson_note) = writing(main, "lessons and assignments");
-    let (mark_level, mark_note) = match main {
-        Size::Large => ("full", "Should mark fairly against the rubric. You can still question any mark in Review.".to_string()),
-        Size::Unknown => ("unknown", "Depends on the model. Check a few marks in Review early on.".to_string()),
-        _ => ("reduced", "Marks may be off now and then. Use Review to question any that look wrong.".to_string()),
-    };
-
-    let format = match &e.check {
-        None => area("format", "Answers the app can use", "unknown", "Not checked yet. Press Check to try the service."),
-        Some(c) if !c.reached => area("format", "Answers the app can use", "none", format!("Couldn't reach it: {}", c.message)),
-        Some(c) if !c.json_ok => area("format", "Answers the app can use", "none", c.message.clone()),
-        Some(c) if c.format == "prompt" => area(
-            "format",
-            "Answers the app can use",
-            "reduced",
-            "It worked, but this service ignores the setting that asks for JSON, so the app asks in words. Some steps may need a second try.",
-        ),
-        Some(c) => area("format", "Answers the app can use", "full", format!("Worked when checked ({} s for a short answer).", c.seconds)),
-    };
-
-    let photos = match (e.sees_images, e.check.as_ref().and_then(|c| c.images_ok)) {
-        (false, _) => area("photos", "Marking photos and uploads", "none", "Photos and scans of handwritten work can't be marked. Typed answers still can. Turn on \"This model can see images\" if it can."),
-        (true, Some(false)) => area("photos", "Marking photos and uploads", "none", "It couldn't see the test picture, so photos won't be marked."),
-        (true, None) => area("photos", "Marking photos and uploads", "unknown", "Pictures will be sent along. Press Check to make sure the model can see them. PDFs and Word files can't be marked."),
-        (true, Some(true)) => area("photos", "Marking photos and uploads", "reduced", "Photos and pictures are marked. PDFs and Word files can't be opened, so hand those in as text or photos."),
-    };
-
-    let mut areas = vec![
-        area("plan", "Planning and exams", plan_level, plan_note),
-        area("lessons", "Lessons and assignments", lesson_level, lesson_note),
-        format,
-        area("sources", "Reading list", "reduced", "There's no web search here, so the model suggests sources from memory and links aren't checked. Some may be broken."),
-        area("research", "Research while writing", "none", "Thorough and Max builds can't look anything up; lessons come from what the model already knows."),
-        area("marking", "Marking typed work", mark_level, mark_note),
-        photos,
-        area("files", "Your own materials", "reduced", "Text files (notes, .txt, .md, .csv, code) are sent with each request. PDFs and Word files can't be opened, so paste what you need into a note."),
-    ];
-    if e.is_local() {
-        areas.push(area(
-            "context",
-            "Room for long requests",
-            "unknown",
-            "Local servers often start with a small context window, and course steps send long requests. Set it to at least 32,000 tokens (Ollama: num_ctx; LM Studio: Context Length) or answers get cut off.",
-        ));
-    }
-
-    let format_level = areas.iter().find(|a| a.id == "format").map(|a| a.level.clone()).unwrap_or_default();
-    let (overall, headline) = if format_level == "none" {
-        ("limited", "This setup can't build courses yet. Fix what Check found and try again.".to_string())
-    } else if strong == Size::Small || main == Size::Small {
-        ("limited", "It can build a course, but a small model will make a rough one. Use a bigger model for anything you care about.".to_string())
-    } else if format_level == "unknown" {
-        ("unknown", "Press Check to see how well this works. Until then, this is a guess from the model names.".to_string())
-    } else if strong == Size::Large && main == Size::Large {
-        ("good", "Good. Courses should build well, but the reading list isn't checked on the web and there's no research while writing.".to_string())
-    } else {
-        ("fair", "Usable. Expect simpler lessons and exams than with a large model, no web research, and an unchecked reading list.".to_string())
-    };
-    Fit { overall: overall.into(), headline, areas, cost }
 }
 
 #[cfg(test)]
@@ -233,12 +348,16 @@ mod tests {
     }
 
     fn ep(model: &str) -> Endpoint {
-        Endpoint { base_url: "https://api.example.com/v1".into(), model: model.into(), ..Default::default() }
+        Endpoint { id: "s1".into(), base_url: "https://api.example.com/v1".into(), model: model.into(), ..Default::default() }
     }
 
     fn checked(mut e: Endpoint, json_ok: bool) -> Endpoint {
         e.check = Some(Check { reached: true, json_ok, format: "schema".into(), seconds: 2.0, ..Default::default() });
         e
+    }
+
+    fn level(f: &Fit, id: &str) -> String {
+        f.areas.iter().find(|a| a.id == id).map(|a| a.level.clone()).unwrap_or_default()
     }
 
     #[test]
@@ -250,8 +369,7 @@ mod tests {
 
     #[test]
     fn unchecked_endpoint_is_unknown_until_checked() {
-        let f = for_endpoint(&ep("gpt-5"));
-        assert_eq!(f.overall, "unknown");
+        assert_eq!(for_endpoint(&ep("gpt-5")).overall, "unknown");
         assert_eq!(for_endpoint(&checked(ep("gpt-5"), true)).overall, "good");
         assert_eq!(for_endpoint(&checked(ep("gpt-5-mini"), true)).overall, "fair");
         assert_eq!(for_endpoint(&checked(ep("llama3.2:3b"), true)).overall, "limited");
@@ -261,20 +379,48 @@ mod tests {
     #[test]
     fn always_says_what_is_lost() {
         let f = for_endpoint(&checked(ep("gpt-5"), true));
-        let level = |id: &str| f.areas.iter().find(|a| a.id == id).unwrap().level.clone();
-        assert_eq!(level("sources"), "reduced");
-        assert_eq!(level("research"), "none");
-        assert_eq!(level("photos"), "none");
-        assert!(f.cost.contains("Billed"));
+        assert_eq!(level(&f, "sources"), "reduced");
+        assert_eq!(level(&f, "research"), "none");
+        assert_eq!(level(&f, "photos"), "none");
+        assert!(f.cost.contains("bills you"));
     }
 
     #[test]
-    fn local_servers_get_the_context_warning_and_no_charges() {
-        let mut e = checked(ep("qwen2.5-72b"), true);
-        e.base_url = "http://localhost:11434/v1".into();
+    fn a_service_that_searches_and_reads_pdfs_gets_credit() {
+        let mut e = checked(ep("claude-sonnet-4-5"), true);
+        e.api = Api::Anthropic;
+        e.web_search = true;
+        e.reads_pdfs = true;
+        e.sees_images = true;
+        e.check.as_mut().unwrap().images_ok = Some(true);
+        e.check.as_mut().unwrap().format = "prompt".into();
         let f = for_endpoint(&e);
+        assert_eq!(level(&f, "sources"), "full");
+        assert_eq!(level(&f, "research"), "full");
+        assert_eq!(level(&f, "format"), "full"); // Anthropic always asks in words; that's not a fallback
+        assert!(f.areas.iter().find(|a| a.id == "files").unwrap().note.contains("PDFs are sent"));
+        // web search on an API without a search tool does nothing
+        let mut plain = checked(ep("gpt-5"), true);
+        plain.web_search = true;
+        assert_eq!(level(&for_endpoint(&plain), "sources"), "reduced");
+    }
+
+    #[test]
+    fn mixed_jobs_report_each_one() {
+        let local = Endpoint { base_url: "http://localhost:11434".into(), api: Api::Ollama, ..checked(ep("qwen2.5-72b"), true) };
+        let choice = AiChoice {
+            services: vec![local],
+            roles: Roles { write: Target { service: "s1".into(), model: String::new() }, ..Default::default() },
+            ..Default::default()
+        };
+        let f = assess(&choice);
+        // planning and research stay with Claude Code
+        assert!(f.areas.iter().find(|a| a.id == "plan").unwrap().note.contains("Opus"));
+        assert_eq!(level(&f, "sources"), "full");
+        assert!(f.areas.iter().find(|a| a.id == "lessons").unwrap().note.contains("localhost"));
         assert!(f.areas.iter().any(|a| a.id == "context"));
-        assert!(f.cost.contains("no charges"));
+        assert!(f.cost.contains("Claude Code counts") && f.cost.contains("no charges"));
+        assert_eq!(f.overall, "good");
     }
 
     #[test]

@@ -7,6 +7,34 @@ are listed under **Unreleased**.
 
 Nothing yet.
 
+## 1.0.0 (2026-11-24)
+
+### Any AI service, for any job
+
+**Why:** 0.9.0 opened the door to services other than Claude Code, but only ones with an OpenAI-style API, and only
+one at a time, doing everything. People use all sorts of AI: other companies' own APIs, gateways that need odd
+headers, models on their own computer, command-line tools. They should be able to use any of them, mix them with
+Claude Code, and change anything about the request without waiting for the app to grow a setting.
+
+- **Any number of services.** Settings, AI services lists them; add, edit, check or remove each one.
+- **Every kind of API.** A service can speak OpenAI-style chat completions, the OpenAI Responses API, Anthropic's
+  Messages API, Google's Gemini API or Ollama's own API. Or it can be **any other HTTP API**, with a request body you
+  write yourself (placeholders like `{{model}}`, `{{prompt}}` and `{{messages}}`) and a path to the answer, or **a
+  program on this computer** that reads a prompt and prints an answer.
+- **Who does what.** Choose Claude Code or any service, and a model, for each job: planning and exams; lessons,
+  assignments and marking; quick checks; and web research. Keep Claude Code for planning and research and let a
+  local model write, or any other mix.
+- **Every request setting.** The key's header and prefix, or the key as a query parameter; extra headers; extra
+  query parameters; extra body fields as JSON; the output limit; Ollama's context size; and the time a step may take.
+- **Web search and PDFs where the API has them.** The Responses, Anthropic and Gemini APIs can search the web
+  themselves, so the reading list is found online. The Anthropic and Gemini APIs also get your PDFs.
+- **New starting points** for Azure OpenAI, xAI and Together AI, next to the ones from 0.9.0. OpenAI now starts on the
+  Responses API, and Anthropic and Gemini on their own APIs.
+- The report now goes job by job, names who does each one, and adds up the cost for Claude Code and each service.
+- Settings from 0.9.0 carry over: your service becomes the first one, doing the same jobs as before.
+- Keys with quotes or backslashes in them now work; only line breaks are refused.
+- The timeout error no longer says "Claude Code" when another service timed out.
+
 ## 0.9.0 (2026-11-24)
 
 ### Build with another AI service

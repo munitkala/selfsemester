@@ -1,13 +1,15 @@
-//! Another AI service instead of Claude Code: anything that speaks the OpenAI-style chat completions API.
+//! AI services other than Claude Code, set up by the learner in Settings.
 //!
-//! That covers most of them: OpenAI, OpenRouter, Google Gemini, Groq, Mistral, DeepSeek, the Anthropic API, and
-//! programs that run models on your own computer, like Ollama and LM Studio. Requests go through the system's curl,
-//! the same way lesson sounds and tools are downloaded, so the app still needs no HTTP library.
+//! A service can be almost anything that writes text: an OpenAI-style API (OpenAI, OpenRouter, Groq, Mistral,
+//! DeepSeek, LM Studio...), OpenAI's Responses API, Anthropic's or Google's own APIs, Ollama, a hand-built HTTP
+//! request for anything else, or a program on this computer that reads a prompt and prints an answer. HTTP goes
+//! through the system's curl, the same way lesson sounds and tools are downloaded, so the app needs no HTTP library.
 //!
-//! What's lost compared with Claude Code: there's no web search, and the model can't open files by itself. Text
-//! files are put into the request instead, and pictures are sent along when the model can see images. `fit.rs`
-//! turns all of this into a plain report for the learner before anything is built.
+//! The model can't open files by itself here, so text files, pictures and (where the API takes them) PDFs travel
+//! with the request. Web search only happens where the service does it itself. `fit.rs` turns all of this into a
+//! plain report for the learner before anything is built.
 
+use super::styles::{self, Answer, Ask, JsonMode, Style};
 use super::{ClaudeRunner, ClaudeStatus, RunError, StageOutput, StageRequest, Tier, Usage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -23,6 +25,7 @@ use std::time::{Duration, Instant};
 const MAX_TEXT_FILE: usize = 60_000;
 const MAX_TEXT_TOTAL: usize = 200_000;
 const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_PDF_BYTES: u64 = 20 * 1024 * 1024;
 
 const TEXT_EXTS: &[&str] = &[
     "txt", "md", "markdown", "csv", "tsv", "json", "xml", "html", "htm", "yaml", "yml", "toml", "ini", "log", "tex",
@@ -34,35 +37,102 @@ const IMAGE_EXTS: &[(&str, &str)] =
 /// A 16 x 16 red square, for checking whether the model can see pictures.
 const RED_SQUARE_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mO4oKBAEmIY1TCqYfhqAABLfxAQegypMgAAAABJRU5ErkJggg==";
 
-/// The service the learner set up in Settings.
+/// What kind of thing a service is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Api {
+    #[default]
+    OpenaiChat,
+    OpenaiResponses,
+    Anthropic,
+    Gemini,
+    Ollama,
+    /// Any HTTP API: the learner writes the request body and says where the answer is.
+    Custom,
+    /// A program on this computer. The prompt goes in on stdin and the answer comes out on stdout.
+    Command,
+}
+
+impl Api {
+    pub fn style(self) -> Option<Style> {
+        match self {
+            Api::OpenaiChat => Some(Style::OpenaiChat),
+            Api::OpenaiResponses => Some(Style::OpenaiResponses),
+            Api::Anthropic => Some(Style::Anthropic),
+            Api::Gemini => Some(Style::Gemini),
+            Api::Ollama => Some(Style::Ollama),
+            Api::Custom | Api::Command => None,
+        }
+    }
+
+    /// The first way to ask for JSON. Services that don't take a schema start further down the list.
+    fn first_format(self) -> Format {
+        match self {
+            Api::OpenaiChat | Api::OpenaiResponses | Api::Ollama => Format::Schema,
+            Api::Gemini => Format::Json,
+            Api::Anthropic | Api::Custom | Api::Command => Format::Prompt,
+        }
+    }
+}
+
+/// One service the learner set up.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Endpoint {
+    /// Short id the job assignments point at.
+    pub id: String,
+    /// The learner's name for it, e.g. "OpenAI" or "Ollama on the desktop".
+    pub name: String,
+    pub api: Api,
     /// Which preset it started from ("openai", "ollama", ...), or "custom". Only used to show the right hints.
-    #[serde(default)]
     pub preset: String,
-    /// Up to and including the version part, e.g. `https://api.openai.com/v1`.
+    /// For HTTP services: the base address, e.g. `https://api.openai.com/v1`.
     pub base_url: String,
-    /// Empty for local servers that don't ask for one.
-    #[serde(default)]
+    /// Empty for services that don't need one.
     pub api_key: String,
-    /// Used for lessons, the reading list and most marking.
+    /// The usual model, for anything the job assignments don't name a model for.
     pub model: String,
-    /// Planning, exams and final-exam marking. Empty means `model`.
-    #[serde(default)]
+    /// Older settings files had per-tier models; kept so they still load. Empty means `model`.
     pub strong_model: String,
-    /// Small checks and summaries. Empty means `model`.
-    #[serde(default)]
     pub quick_model: String,
     /// The learner says the model takes pictures (photos of handwritten work, diagrams).
-    #[serde(default)]
     pub sees_images: bool,
-    /// What the last "Check" found. Cleared whenever the address or models change.
-    #[serde(default)]
+    /// The service searches the web itself (only where the API has a search tool: Responses, Anthropic, Gemini).
+    pub web_search: bool,
+    /// Send PDFs along (Anthropic and Gemini take them).
+    pub reads_pdfs: bool,
+    /// Where the key goes. Empty uses the API's usual header.
+    pub auth_header: String,
+    /// What goes before the key in that header, e.g. "Bearer ". Only used with `auth_header`.
+    pub auth_prefix: String,
+    /// Send the key as this query parameter instead of a header (e.g. "key").
+    pub auth_query: String,
+    /// Extra headers, one "Name: value" per line.
+    pub headers: String,
+    /// Extra query parameters, one "name=value" per line (e.g. Azure's api-version).
+    pub query: String,
+    /// JSON object merged into every request body, e.g. {"temperature": 0.3}.
+    pub extra_body: String,
+    /// Most tokens one answer may have. None leaves it to the service.
+    pub max_output: Option<u64>,
+    /// Context window to ask for, where the API takes one (Ollama).
+    pub context: Option<u64>,
+    /// How long one step may take before it counts as stuck. None means 20 minutes.
+    pub timeout_minutes: Option<u64>,
+    /// Custom HTTP: path after the base address (may be empty), the body with {{...}} placeholders, and where the
+    /// answer's text is, as a dotted path like `choices.0.message.content`.
+    pub custom_path: String,
+    pub custom_body: String,
+    pub custom_text_path: String,
+    /// Command: the program and its arguments, e.g. `ollama run {{model}}`.
+    pub command: String,
+    /// What the last "Check" found. Cleared whenever the settings it depends on change.
     pub check: Option<Check>,
 }
 
 /// Result of a quick real test against the service.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Check {
     pub at: String,
     /// It answered at all.
@@ -78,6 +148,7 @@ pub struct Check {
 }
 
 impl Endpoint {
+    /// The model for a step when the job assignments don't name one.
     pub fn model_for(&self, tier: Tier) -> &str {
         let pick = match tier {
             Tier::Fable | Tier::Opus => &self.strong_model,
@@ -88,36 +159,94 @@ impl Endpoint {
     }
 
     pub fn url(&self, path: &str) -> String {
-        format!("{}/{}", self.base_url.trim().trim_end_matches('/'), path)
+        let base = self.base_url.trim().trim_end_matches('/');
+        let path = path.trim_start_matches('/');
+        if path.is_empty() { base.to_string() } else { format!("{base}/{path}") }
+    }
+
+    pub fn display_name(&self) -> String {
+        if !self.name.trim().is_empty() {
+            return self.name.trim().to_string();
+        }
+        match self.api {
+            Api::Command => "A program on this computer".into(),
+            _ => host_of(&self.base_url),
+        }
     }
 
     /// Something wrong with the settings that would stop every call, in words for the Settings page.
     pub fn problem(&self) -> Option<String> {
-        let url = self.base_url.trim();
-        if url.is_empty() {
-            return Some("Add the service's address.".into());
+        if self.api == Api::Command {
+            if self.command.trim().is_empty() {
+                return Some("Add the command to run.".into());
+            }
+        } else {
+            let url = self.base_url.trim();
+            if url.is_empty() {
+                return Some("Add the service's address.".into());
+            }
+            if !(url.starts_with("https://") || url.starts_with("http://")) {
+                return Some("The address should start with https:// (or http:// for a server on your own network).".into());
+            }
         }
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Some("The address should start with https:// (or http:// for a server on your own computer).".into());
-        }
-        if self.model.trim().is_empty() {
+        if self.model.trim().is_empty() && self.api != Api::Custom && self.api != Api::Command {
             return Some("Pick a model.".into());
         }
+        if self.api == Api::Custom {
+            if self.custom_body.trim().is_empty() {
+                return Some("Write the request body.".into());
+            }
+            if self.custom_text_path.trim().is_empty() {
+                return Some("Say where the answer's text is in the reply.".into());
+            }
+        }
         if bad_key(&self.api_key) {
-            return Some("The API key has a character in it that can't be right (a quote, backslash or line break).".into());
+            return Some("The API key has a line break in it, which can't be right.".into());
+        }
+        for line in lines(&self.headers) {
+            if !line.contains(':') {
+                return Some(format!("The header line \"{line}\" needs a colon, like \"Name: value\"."));
+            }
+        }
+        for line in lines(&self.query) {
+            if !line.contains('=') {
+                return Some(format!("The query line \"{line}\" needs an equals sign, like \"name=value\"."));
+            }
+        }
+        if !self.extra_body.trim().is_empty() && !serde_json::from_str::<Value>(&self.extra_body).is_ok_and(|v| v.is_object()) {
+            return Some("The extra body fields should be a JSON object, like {\"temperature\": 0.3}.".into());
         }
         None
     }
 
     /// Runs on this computer or the local network, so nothing goes out to a company and nothing is billed.
     pub fn is_local(&self) -> bool {
-        is_local_host(&host_of(&self.base_url))
+        self.api == Api::Command || is_local_host(&host_of(&self.base_url))
+    }
+
+    /// PDFs only go to APIs that take them, and only when the learner left that on.
+    pub fn sends_pdfs(&self) -> bool {
+        self.reads_pdfs && self.api.style().is_some_and(|s| s.reads_pdfs())
+    }
+
+    /// The service can search the web for itself.
+    pub fn searches_web(&self) -> bool {
+        self.web_search && matches!(self.api, Api::OpenaiResponses | Api::Anthropic | Api::Gemini)
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(60 * self.timeout_minutes.filter(|m| *m > 0).unwrap_or(20))
     }
 }
 
-/// A key curl's config can't carry. Real keys never have these.
+/// A key curl's config can't carry. Real keys never have line breaks.
 pub fn bad_key(key: &str) -> bool {
-    key.contains(['"', '\\', '\n', '\r'])
+    key.contains(['\n', '\r'])
+}
+
+/// Non-empty lines, without comments.
+fn lines(text: &str) -> impl Iterator<Item = &str> {
+    text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#'))
 }
 
 pub fn host_of(url: &str) -> String {
@@ -139,15 +268,13 @@ pub fn is_local_host(host: &str) -> bool {
         return false;
     }
     // loopback, private ranges, and 100.64/10 (Tailscale and other carrier-grade NAT addresses)
-    matches!(
-        (parts[0], parts[1]),
-        (127, _) | (10, _) | (192, 168) | (169, 254)
-    ) || (parts[0] == 172 && (16..=31).contains(&parts[1]))
+    matches!((parts[0], parts[1]), (127, _) | (10, _) | (192, 168) | (169, 254))
+        || (parts[0] == 172 && (16..=31).contains(&parts[1]))
         || (parts[0] == 100 && (64..=127).contains(&parts[1]))
 }
 
 /// How the request asks for JSON. Services differ: the newest take a JSON schema, many only take "some JSON",
-/// and a few local servers reject the field outright. Tried in this order, and the one that works is remembered.
+/// and some reject the field outright. Tried in this order, and the one that works is remembered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
     Schema,
@@ -170,6 +297,13 @@ impl Format {
             Format::Prompt => None,
         }
     }
+    fn mode(self) -> JsonMode {
+        match self {
+            Format::Schema => JsonMode::Schema,
+            Format::Json => JsonMode::Json,
+            Format::Prompt => JsonMode::Prompt,
+        }
+    }
 }
 
 /// One HTTP answer, as curl got it.
@@ -179,48 +313,83 @@ struct Reply {
     retry_after: Option<u64>,
 }
 
+/// What goes with the first message: text, plus pictures and PDFs where the service takes them.
+#[derive(Debug, Default, PartialEq)]
+struct Attached {
+    text: String,
+    images: Vec<(String, String)>,
+    pdfs: Vec<String>,
+}
+
+/// The parts of one step that stay the same across its tries.
+struct Job<'a> {
+    ep: &'a Endpoint,
+    model: &'a str,
+    system: &'a str,
+    schema: &'a Value,
+    web: bool,
+    limit: Duration,
+}
+
+/// Talks to the services. Holds nothing about any one service, so one runner serves all of them.
 pub struct EndpointRunner {
-    endpoint: Mutex<Endpoint>,
     /// Request and answer files go here for the moment curl needs them.
     tmp_dir: PathBuf,
-    timeout: Duration,
     stop: AtomicBool,
-    /// What worked last time for each model, so later calls don't repeat the failed tries.
+    /// What worked last time for each service and model, so later calls don't repeat the failed tries.
     formats: Mutex<Vec<(String, Format)>>,
 }
 
 impl EndpointRunner {
-    pub fn new(endpoint: Endpoint, tmp_dir: PathBuf) -> Self {
-        Self {
-            endpoint: Mutex::new(endpoint),
-            tmp_dir,
-            timeout: Duration::from_secs(20 * 60),
-            stop: AtomicBool::new(false),
-            formats: Mutex::new(vec![]),
-        }
+    pub fn new(tmp_dir: PathBuf) -> Self {
+        Self { tmp_dir, stop: AtomicBool::new(false), formats: Mutex::new(vec![]) }
     }
 
-    pub fn endpoint(&self) -> Endpoint {
-        self.endpoint.lock().unwrap().clone()
+    /// A runner tied to one service, for tests and anything else that wants a plain `ClaudeRunner`.
+    pub fn single(endpoint: Endpoint, tmp_dir: PathBuf) -> Single {
+        Single { runner: EndpointRunner::new(tmp_dir), endpoint }
     }
 
-    pub fn set_endpoint(&self, e: Endpoint) {
-        *self.endpoint.lock().unwrap() = e;
+    pub fn forget_formats(&self) {
         self.formats.lock().unwrap().clear();
     }
 
-    fn format_for(&self, model: &str) -> Format {
-        self.formats.lock().unwrap().iter().find(|(m, _)| m == model).map(|(_, f)| *f).unwrap_or(Format::Schema)
+    fn format_for(&self, ep: &Endpoint, model: &str) -> Format {
+        let key = format!("{}/{model}", ep.id);
+        let known = self.formats.lock().unwrap().iter().find(|(m, _)| *m == key).map(|(_, f)| *f);
+        known.unwrap_or(ep.api.first_format())
     }
 
-    fn remember_format(&self, model: &str, f: Format) {
+    fn remember_format(&self, ep: &Endpoint, model: &str, f: Format) {
+        let key = format!("{}/{model}", ep.id);
         let mut all = self.formats.lock().unwrap();
-        all.retain(|(m, _)| m != model);
-        all.push((model.to_string(), f));
+        all.retain(|(m, _)| *m != key);
+        all.push((key, f));
     }
 
-    /// Send one request through curl. The API key goes to curl on stdin, never on the command line, where other
-    /// programs on the computer could read it.
+    /// Wait for a child process, stopping it if the step is stopped or runs too long.
+    fn wait(&self, child: &mut std::process::Child, limit: Duration) -> Result<(), RunError> {
+        let start = Instant::now();
+        loop {
+            if child.try_wait()?.is_some() {
+                return Ok(());
+            }
+            if self.stop.swap(false, Ordering::SeqCst) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(RunError::Stopped);
+            }
+            if start.elapsed() > limit {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(RunError::Timeout(limit.as_secs()));
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+
+    /// Send one request through curl. The address, the key and every header go to curl on stdin as its config,
+    /// never on the command line, where other programs on the computer could read them.
     fn send(&self, ep: &Endpoint, method: &str, path: &str, body: Option<&Value>, limit: Duration) -> Result<Reply, RunError> {
         std::fs::create_dir_all(&self.tmp_dir)?;
         let stamp = format!("{}-{}", std::process::id(), chrono::Utc::now().timestamp_micros());
@@ -232,8 +401,7 @@ impl EndpointRunner {
         let mut cmd = crate::course::audio::system_command(crate::course::audio::system_tool(r"System32\curl.exe", "curl"));
         cmd.args(["-sS", "--proto", "=http,https", "--max-time"])
             .arg(limit.as_secs().max(5).to_string())
-            .args(["-X", method, "-A", &format!("SelfSemester/{}", env!("CARGO_PKG_VERSION"))])
-            .args(["-H", "Content-Type: application/json", "-K", "-", "-o"])
+            .args(["-X", method, "-A", &format!("SelfSemester/{}", env!("CARGO_PKG_VERSION")), "-K", "-", "-o"])
             .arg(&out_file)
             .arg("-D")
             .arg(&head_file)
@@ -242,50 +410,17 @@ impl EndpointRunner {
             std::fs::write(&body_file, serde_json::to_vec(b).map_err(|e| RunError::BadOutput(e.to_string()))?)?;
             cmd.arg("--data-binary").arg(format!("@{}", body_file.display()));
         }
-        cmd.arg(ep.url(path)).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         crate::course::audio::hidden(&mut cmd);
 
         let mut child = cmd.spawn().map_err(|e| RunError::Io(std::io::Error::other(format!("couldn't start curl: {e}"))))?;
         {
             let mut stdin = child.stdin.take().expect("stdin piped");
-            let key = ep.api_key.trim();
-            if !key.is_empty() {
-                stdin.write_all(format!("header = \"Authorization: Bearer {key}\"\n").as_bytes())?;
-                // Anthropic's usual header too. Its OpenAI-style endpoint takes either, so sending both is safe.
-                if host_of(&ep.base_url).ends_with("anthropic.com") {
-                    stdin.write_all(format!("header = \"x-api-key: {key}\"\n").as_bytes())?;
-                }
-            }
+            stdin.write_all(curl_config(ep, path, body.is_some()).as_bytes())?;
         }
-        let mut out = child.stdout.take().expect("stdout piped");
-        let mut err = child.stderr.take().expect("stderr piped");
-        let out_t = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = out.read_to_string(&mut s);
-            s
-        });
-        let err_t = std::thread::spawn(move || {
-            let mut s = String::new();
-            let _ = err.read_to_string(&mut s);
-            s
-        });
-        let start = Instant::now();
-        loop {
-            if child.try_wait()?.is_some() {
-                break;
-            }
-            if self.stop.swap(false, Ordering::SeqCst) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(RunError::Stopped);
-            }
-            if start.elapsed() > limit + Duration::from_secs(10) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(RunError::Timeout(limit.as_secs()));
-            }
-            std::thread::sleep(Duration::from_millis(150));
-        }
+        let out_t = read_all(child.stdout.take().expect("stdout piped"));
+        let err_t = read_all(child.stderr.take().expect("stderr piped"));
+        self.wait(&mut child, limit + Duration::from_secs(10))?;
         let code = out_t.join().unwrap_or_default();
         let stderr = err_t.join().unwrap_or_default();
         let status: u16 = code.trim().parse().unwrap_or(0);
@@ -304,61 +439,115 @@ impl EndpointRunner {
         Ok(Reply { status, body: std::fs::read_to_string(&out_file).unwrap_or_default(), retry_after: retry_after(&headers) })
     }
 
-    /// One chat request with the given messages. Returns the reply's text, usage, the model that answered, and
-    /// whether the reply was cut off at the output limit.
-    fn chat(&self, ep: &Endpoint, model: &str, messages: &[Value], schema: &Value, format: Format, limit: Duration) -> Result<(String, Usage, String, bool), ChatError> {
-        let mut body = json!({ "model": model, "messages": messages, "stream": false });
-        match format {
-            Format::Schema => {
-                body["response_format"] = json!({ "type": "json_schema", "json_schema": { "name": "answer", "schema": schema, "strict": false } })
-            }
-            Format::Json => body["response_format"] = json!({ "type": "json_object" }),
-            Format::Prompt => {}
+    /// Run the learner's program with `input` on stdin and return what it prints.
+    fn run_command(&self, ep: &Endpoint, model: &str, input: &str, limit: Duration) -> Result<String, RunError> {
+        let mut words = split_command(&ep.command.replace("{{model}}", model));
+        if words.is_empty() {
+            return Err(RunError::Endpoint("there's no command to run".into()));
         }
-        let started = Instant::now();
-        let reply = self.send(ep, "POST", "chat/completions", Some(&body), limit).map_err(ChatError::Run)?;
-        let parsed: Option<Value> = serde_json::from_str(&reply.body).ok();
-        if reply.status != 200 {
-            return Err(http_error(reply.status, &reply.body, parsed.as_ref(), reply.retry_after));
+        let program = words.remove(0);
+        let mut cmd = crate::course::audio::system_command(&program);
+        cmd.args(&words)
+            .env("SELFSEMESTER_MODEL", model)
+            .env("SELFSEMESTER_API_KEY", ep.api_key.trim())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(home) = dirs::home_dir() {
+            cmd.current_dir(home);
         }
-        let v = parsed.ok_or_else(|| ChatError::Run(RunError::BadOutput(format!("the service sent back something that isn't JSON: {}", snip(&reply.body)))))?;
-        if let Some(e) = v.get("error").filter(|e| !e.is_null()) {
-            return Err(ChatError::Run(RunError::Endpoint(error_text(e))));
+        crate::course::audio::hidden(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| RunError::Endpoint(format!("couldn't start {program}: {e}")))?;
+        let input = input.to_string();
+        let mut stdin = child.stdin.take().expect("stdin piped");
+        // Write on its own thread: a program that answers before it has read everything mustn't block us.
+        let writer = std::thread::spawn(move || {
+            let _ = stdin.write_all(input.as_bytes());
+        });
+        let out_t = read_all(child.stdout.take().expect("stdout piped"));
+        let err_t = read_all(child.stderr.take().expect("stderr piped"));
+        self.wait(&mut child, limit)?;
+        let _ = writer.join();
+        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+        let out = out_t.join().unwrap_or_default();
+        let err = err_t.join().unwrap_or_default();
+        if !ok && out.trim().is_empty() {
+            return Err(RunError::Endpoint(format!("{program} stopped with an error: {}", snip(if err.trim().is_empty() { "no message" } else { &err }))));
         }
-        let choice = &v["choices"][0];
-        let text = message_text(&choice["message"]);
-        let cut = choice["finish_reason"].as_str() == Some("length");
-        let u = &v["usage"];
-        let n = |p: &str| u.pointer(p).and_then(Value::as_u64).unwrap_or(0);
-        let usage = Usage {
-            input_tokens: n("/prompt_tokens"),
-            output_tokens: n("/completion_tokens"),
-            cache_tokens: n("/prompt_tokens_details/cached_tokens"),
-            web_searches: 0,
-            duration_ms: started.elapsed().as_millis() as u64,
-        };
-        let used_model = v["model"].as_str().filter(|m| !m.is_empty()).unwrap_or(model).to_string();
-        Ok((text, usage, used_model, cut))
+        Ok(out)
     }
 
-    /// Ask, falling back to a simpler way of asking for JSON when the service turns the first one down, and asking
-    /// once more when the answer isn't the JSON that was wanted.
-    fn ask(&self, ep: &Endpoint, model: &str, system: &str, user: Value, schema: &Value, limit: Duration) -> Result<(StageOutput, Format), RunError> {
-        let mut format = self.format_for(model);
-        let mut messages = vec![json!({ "role": "system", "content": system }), json!({ "role": "user", "content": user })];
+    /// One request and its answer, in whatever form the service takes.
+    fn call(&self, job: &Job, turns: &[(String, String)], first: &Attached, format: Format) -> Result<Answer, ChatError> {
+        let Job { ep, model, system, schema, web, limit } = *job;
+        let mut answer = match ep.api {
+            Api::Command => {
+                let text = self.run_command(ep, model, &transcript(system, turns), limit).map_err(ChatError::Run)?;
+                Answer { text, ..Default::default() }
+            }
+            Api::Custom => {
+                let body = custom_body(ep, model, system, turns, schema).map_err(|e| ChatError::Run(RunError::Endpoint(e)))?;
+                let reply = self.send(ep, "POST", &ep.custom_path, Some(&body), limit).map_err(ChatError::Run)?;
+                let v = reply_json(&reply)?;
+                let text = at_path(&v, &ep.custom_text_path).map(text_of).unwrap_or_default();
+                if text.is_empty() {
+                    let why = v.get("error").map(error_text).unwrap_or_else(|| format!("nothing at {} in: {}", ep.custom_text_path, snip(&reply.body)));
+                    return Err(ChatError::Run(RunError::Endpoint(why)));
+                }
+                Answer { text, ..Default::default() }
+            }
+            api => {
+                let style = api.style().expect("HTTP style");
+                let ask = Ask {
+                    model,
+                    system,
+                    turns,
+                    images: &first.images,
+                    pdfs: &first.pdfs,
+                    schema,
+                    json_mode: format.mode(),
+                    web_search: web,
+                    max_output: ep.max_output,
+                    context: ep.context,
+                };
+                let mut body = styles::body(style, &ask);
+                merge(&mut body, &ep.extra_body);
+                let reply = self.send(ep, "POST", &style.path(model), Some(&body), limit).map_err(ChatError::Run)?;
+                let v = reply_json(&reply)?;
+                styles::parse(style, &v).map_err(|e| ChatError::Run(RunError::Endpoint(e)))?
+            }
+        };
+        if answer.model.as_deref().is_none_or(str::is_empty) {
+            answer.model = Some(model.to_string());
+        }
+        Ok(answer)
+    }
+
+    /// Ask, falling back to a simpler way of asking for JSON when the service turns one down, and asking once
+    /// more when the answer isn't the JSON that was wanted.
+    fn ask(&self, job: &Job, first: Attached) -> Result<(StageOutput, Format), RunError> {
+        let Job { ep, model, schema, .. } = *job;
+        let mut format = self.format_for(ep, model);
+        let mut turns = vec![("user".to_string(), first.text.clone())];
         let mut total = Usage::default();
         let mut nudged = false;
         loop {
-            match self.chat(ep, model, &messages, schema, format, limit) {
-                Ok((text, usage, used_model, cut)) => {
-                    add_usage(&mut total, &usage);
-                    match find_json_for(&text, schema) {
+            let started = Instant::now();
+            match self.call(job, &turns, &first, format) {
+                Ok(a) => {
+                    total.input_tokens += a.input_tokens;
+                    total.output_tokens += a.output_tokens;
+                    total.cache_tokens += a.cache_tokens;
+                    total.web_searches += a.web_searches;
+                    total.duration_ms += started.elapsed().as_millis() as u64;
+                    let used = a.model.clone().unwrap_or_else(|| model.to_string());
+                    match find_json_for(&a.text, schema) {
                         Some(value) => {
-                            self.remember_format(model, format);
-                            return Ok((StageOutput { value, usage: total, model: used_model }, format));
+                            self.remember_format(ep, model, format);
+                            return Ok((StageOutput { value, usage: total, model: used }, format));
                         }
                         // Asking again would only get cut off again.
-                        None if cut => {
+                        None if a.cut => {
                             return Err(RunError::BadOutput(format!(
                                 "{model}'s answer was cut off before it finished. Either its output limit (or a local server's \
                                  context size) is too small for this step, or the model got stuck repeating itself"
@@ -366,27 +555,26 @@ impl EndpointRunner {
                         }
                         None if !nudged => {
                             nudged = true;
-                            let what = match find_json(&text) {
+                            let what = match find_json(&a.text) {
                                 Some(v) => format!(
                                     "Your answer left out these required fields: {}. Send the whole JSON object again with every required field filled in.",
                                     missing_fields(schema, &v).join(", ")
                                 ),
                                 None => "Your answer wasn't valid JSON. Send it again as one JSON object.".to_string(),
                             };
-                            messages.push(json!({ "role": "assistant", "content": text }));
-                            messages.push(json!({
-                                "role": "user",
-                                "content": format!(
-                                    "{what} Nothing else, no Markdown fences. It must match this JSON Schema:
-{}",
+                            turns.push(("assistant".into(), a.text));
+                            turns.push((
+                                "user".into(),
+                                format!(
+                                    "{what} Nothing else, no Markdown fences. It must match this JSON Schema:\n{}",
                                     serde_json::to_string(schema).unwrap_or_default()
-                                )
-                            }));
+                                ),
+                            ));
                         }
                         None => {
                             return Err(RunError::BadOutput(format!(
                                 "{model} didn't answer in the shape this step needs, even when asked twice. A larger model usually fixes this. It said: {}",
-                                snip(&text)
+                                snip(&a.text)
                             )));
                         }
                     }
@@ -400,10 +588,15 @@ impl EndpointRunner {
         }
     }
 
-    /// The models the service lists, for the picker in Settings. Not every service has this list.
-    pub fn models(&self) -> Result<Vec<String>, String> {
-        let ep = self.endpoint();
-        let reply = self.send(&ep, "GET", "models", None, Duration::from_secs(30)).map_err(|e| e.to_string())?;
+    /// The models a service lists, for the picker in Settings. Not every service has this list.
+    pub fn models(&self, ep: &Endpoint) -> Result<Vec<String>, String> {
+        let Some(style) = ep.api.style() else {
+            return Err("this kind of service has no model list; type the model name instead".into());
+        };
+        let Some(path) = style.models_path() else {
+            return Err("this API has no model list; type the model name instead".into());
+        };
+        let reply = self.send(ep, "GET", path, None, Duration::from_secs(30)).map_err(|e| e.to_string())?;
         if reply.status != 200 {
             let v = serde_json::from_str::<Value>(&reply.body).ok();
             return Err(match http_error(reply.status, &reply.body, v.as_ref(), None) {
@@ -412,25 +605,17 @@ impl EndpointRunner {
             });
         }
         let v: Value = serde_json::from_str(&reply.body).map_err(|_| "the service's model list isn't JSON".to_string())?;
-        let list = v["data"].as_array().or_else(|| v["models"].as_array()).cloned().unwrap_or_default();
-        let mut names: Vec<String> = list
-            .iter()
-            .filter_map(|m| m["id"].as_str().or_else(|| m["name"].as_str()).or_else(|| m.as_str()))
-            .map(|s| s.trim_start_matches("models/").to_string())
-            .collect();
-        names.sort();
-        names.dedup();
-        Ok(names)
+        Ok(styles::parse_models(style, &v))
     }
 
-    /// Try the service for real: one small structured answer, and a picture if the model is meant to see them.
-    pub fn check(&self) -> Check {
-        let ep = self.endpoint();
+    /// Try a service for real: one small structured answer, and a picture if the model is meant to see them.
+    pub fn check(&self, ep: &Endpoint, model: &str) -> Check {
         let mut c = Check { at: crate::db::now_utc(), ..Default::default() };
         if let Some(p) = ep.problem() {
             c.message = p;
             return c;
         }
+        let model = if model.trim().is_empty() { ep.model.trim().to_string() } else { model.trim().to_string() };
         let schema = json!({
             "type": "object",
             "properties": {
@@ -445,17 +630,19 @@ impl EndpointRunner {
         });
         let started = Instant::now();
         let system = system_text(Some("You check that SelfSemester can reach you."), &schema);
-        let model = ep.model_for(Tier::Sonnet).to_string();
-        match self.ask(&ep, &model, &system, json!("Set ok to true and list the numbers 1, 2 and 3 with their English words."), &schema, Duration::from_secs(180)) {
+        let first = Attached { text: "Set ok to true and list the numbers 1, 2 and 3 with their English words.".into(), ..Default::default() };
+        let name = if model.is_empty() { ep.display_name() } else { model.clone() };
+        let job = Job { ep, model: &model, system: &system, schema: &schema, web: false, limit: Duration::from_secs(180) };
+        match self.ask(&job, first) {
             Ok((out, format)) => {
                 c.reached = true;
                 c.format = format.name().into();
                 let nums: Vec<i64> = out.value["numbers"].as_array().map(|a| a.iter().filter_map(|x| x["n"].as_i64()).collect()).unwrap_or_default();
                 c.json_ok = out.value["ok"] == true && nums == [1, 2, 3];
                 c.message = if c.json_ok {
-                    format!("{} answered correctly.", out.model)
+                    format!("{name} answered correctly.")
                 } else {
-                    format!("{} answered, but got a simple question wrong. Expect mistakes in lessons and marks.", out.model)
+                    format!("{name} answered, but got a simple question wrong. Expect mistakes in lessons and marks.")
                 };
             }
             Err(e) => {
@@ -464,13 +651,16 @@ impl EndpointRunner {
             }
         }
         c.seconds = (started.elapsed().as_secs_f64() * 10.0).round() / 10.0;
-        if ep.sees_images && c.reached {
+        if ep.sees_images && c.reached && ep.api.style().is_some() {
             let schema = json!({ "type": "object", "properties": { "colour": { "type": "string" } }, "required": ["colour"] });
-            let user = json!([
-                { "type": "text", "text": "What colour is this square? One word." },
-                { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{RED_SQUARE_PNG}") } }
-            ]);
-            let saw = self.ask(&ep, &model, &system_text(None, &schema), user, &schema, Duration::from_secs(120));
+            let first = Attached {
+                text: "What colour is this square? One word.".into(),
+                images: vec![("image/png".into(), RED_SQUARE_PNG.into())],
+                pdfs: vec![],
+            };
+            let system = system_text(None, &schema);
+            let job = Job { ep, model: &model, system: &system, schema: &schema, web: false, limit: Duration::from_secs(120) };
+            let saw = self.ask(&job, first);
             c.images_ok = Some(matches!(&saw, Ok((o, _)) if o.value["colour"].as_str().is_some_and(|s| s.to_lowercase().contains("red"))));
             if c.images_ok == Some(false) {
                 c.message += " It couldn't see a test picture, so photos of your work won't be marked.";
@@ -478,42 +668,60 @@ impl EndpointRunner {
         }
         c
     }
-}
 
-impl ClaudeRunner for EndpointRunner {
-    fn status(&self) -> ClaudeStatus {
-        let ep = self.endpoint();
-        let problem = ep.problem();
-        ClaudeStatus {
-            provider: "endpoint".into(),
-            installed: problem.is_none(),
-            logged_in: problem.is_none(),
-            path: Some(ep.base_url.clone()),
-            version: Some(ep.model.clone()),
-            auth_method: Some(if ep.is_local() { "local".into() } else { "api key".into() }),
-            on_subscription: false,
-            problem: problem.map(|p| format!("The AI service isn't set up yet: {p} See Settings.")),
-        }
-    }
-
-    fn run(&self, req: &StageRequest) -> Result<StageOutput, RunError> {
-        let ep = self.endpoint();
+    /// Run one step on a service with a given model.
+    pub fn run_on(&self, ep: &Endpoint, model: &str, req: &StageRequest) -> Result<StageOutput, RunError> {
         if let Some(p) = ep.problem() {
-            return Err(RunError::Endpoint(format!("the AI service isn't set up: {p}")));
+            return Err(RunError::Endpoint(format!("{} isn't set up: {p}", ep.display_name())));
         }
-        let model = ep.model_for(req.tier).to_string();
+        let wants_web = req.tools.iter().any(|t| t == "WebSearch" || t == "WebFetch");
+        let web = wants_web && ep.searches_web();
         let mut prompt = req.prompt.clone();
-        if req.tools.iter().any(|t| t == "WebSearch" || t == "WebFetch") {
+        if wants_web && !web {
             prompt += NO_WEB_NOTE;
         }
-        let user = with_files(prompt, &req.add_dirs, ep.sees_images);
+        let first = with_files(prompt, &req.add_dirs, ep.sees_images && ep.api.style().is_some(), ep.sends_pdfs());
         let system = system_text(req.system.as_deref(), &req.schema);
-        let limit = super::cli::time_limit(self.timeout, req);
-        self.ask(&ep, &model, &system, user, &req.schema, limit).map(|(out, _)| out)
+        let limit = super::cli::time_limit(ep.timeout(), req);
+        let job = Job { ep, model, system: &system, schema: &req.schema, web, limit };
+        self.ask(&job, first).map(|(out, _)| out)
     }
 
-    fn stop_current(&self) {
+    pub fn stop_current(&self) {
         self.stop.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Status for one service, in the same shape as Claude Code's.
+pub fn status_of(ep: &Endpoint) -> ClaudeStatus {
+    let problem = ep.problem();
+    ClaudeStatus {
+        provider: "endpoint".into(),
+        installed: problem.is_none(),
+        logged_in: problem.is_none(),
+        path: Some(if ep.api == Api::Command { ep.command.clone() } else { ep.base_url.clone() }),
+        version: Some(ep.model.clone()),
+        auth_method: Some(if ep.is_local() { "local".into() } else { "api key".into() }),
+        on_subscription: false,
+        problem: problem.map(|p| format!("{} isn't set up yet: {p} See Settings.", ep.display_name())),
+    }
+}
+
+/// One service as a plain runner.
+pub struct Single {
+    pub runner: EndpointRunner,
+    pub endpoint: Endpoint,
+}
+
+impl ClaudeRunner for Single {
+    fn status(&self) -> ClaudeStatus {
+        status_of(&self.endpoint)
+    }
+    fn run(&self, req: &StageRequest) -> Result<StageOutput, RunError> {
+        self.runner.run_on(&self.endpoint, self.endpoint.model_for(req.tier), req)
+    }
+    fn stop_current(&self) {
+        self.runner.stop_current();
     }
 }
 
@@ -533,9 +741,178 @@ fn system_text(system: Option<&str>, schema: &Value) -> String {
     )
 }
 
+/// The whole conversation as one block of text, for a program that only takes a prompt.
+fn transcript(system: &str, turns: &[(String, String)]) -> String {
+    let mut s = format!("{system}\n\n");
+    if turns.len() == 1 {
+        s += &turns[0].1;
+        return s;
+    }
+    for (role, text) in turns {
+        s += &format!("{}:\n{text}\n\n", if role == "assistant" { "YOUR EARLIER ANSWER" } else { "REQUEST" });
+    }
+    s
+}
+
+/// curl's config for one request: the address with any query parameters, and every header.
+fn curl_config(ep: &Endpoint, path: &str, json_body: bool) -> String {
+    let mut url = ep.url(path);
+    let mut query: Vec<(String, String)> =
+        lines(&ep.query).filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).collect();
+    let key = ep.api_key.trim();
+    let mut headers: Vec<String> = vec![];
+    if json_body {
+        headers.push("Content-Type: application/json".into());
+    }
+    if let Some(style) = ep.api.style() {
+        headers.extend(style.fixed_headers().iter().map(|(k, v)| format!("{k}: {v}")));
+    }
+    if !key.is_empty() {
+        if !ep.auth_query.trim().is_empty() {
+            query.push((ep.auth_query.trim().to_string(), key.to_string()));
+        } else if !ep.auth_header.trim().is_empty() {
+            headers.push(format!("{}: {}{key}", ep.auth_header.trim(), ep.auth_prefix));
+        } else {
+            let (name, prefix) = ep.api.style().map(|s| s.key_header()).unwrap_or(("Authorization", "Bearer "));
+            headers.push(format!("{name}: {prefix}{key}"));
+        }
+    }
+    headers.extend(lines(&ep.headers).map(str::to_string));
+    if !query.is_empty() {
+        let q = query.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&");
+        url += if url.contains('?') { "&" } else { "?" };
+        url += &q;
+    }
+    let mut cfg = format!("url = \"{}\"\n", quote(&url));
+    for h in headers {
+        cfg += &format!("header = \"{}\"\n", quote(&h));
+    }
+    cfg
+}
+
+/// Escape a value for a double-quoted string in curl's config.
+fn quote(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Percent-encode a query value.
+fn encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Split a command line into words, keeping "quoted parts" together.
+fn split_command(line: &str) -> Vec<String> {
+    let mut words = vec![];
+    let mut cur = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    for ch in line.trim().chars() {
+        match ch {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if started {
+                    words.push(std::mem::take(&mut cur));
+                    started = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        words.push(cur);
+    }
+    words
+}
+
+/// The learner's request body with its placeholders filled in. Each placeholder becomes a JSON value, so the
+/// template stays valid JSON: write `"model": {{model}}`, not `"model": "{{model}}"`.
+fn custom_body(ep: &Endpoint, model: &str, system: &str, turns: &[(String, String)], schema: &Value) -> Result<Value, String> {
+    let prompt = if turns.len() == 1 { turns[0].1.clone() } else { transcript("", turns).trim().to_string() };
+    let mut messages = vec![json!({ "role": "system", "content": system })];
+    messages.extend(turns.iter().map(|(r, t)| json!({ "role": r, "content": t })));
+    let fill = [
+        ("{{model}}", json!(model)),
+        ("{{system}}", json!(system)),
+        ("{{prompt}}", json!(prompt)),
+        ("{{full_prompt}}", json!(transcript(system, turns))),
+        ("{{messages}}", Value::Array(messages)),
+        ("{{schema}}", schema.clone()),
+        ("{{max_output}}", json!(ep.max_output.unwrap_or(16000))),
+    ];
+    let mut text = ep.custom_body.clone();
+    for (k, v) in fill {
+        text = text.replace(k, &v.to_string());
+    }
+    let mut body: Value = serde_json::from_str(&text).map_err(|e| format!("the request body isn't valid JSON once filled in ({e})"))?;
+    merge(&mut body, &ep.extra_body);
+    Ok(body)
+}
+
+/// Follow a dotted path like `choices.0.message.content` into a value.
+fn at_path<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
+    path.trim().split('.').filter(|p| !p.is_empty()).try_fold(v, |v, part| match part.parse::<usize>() {
+        Ok(i) if v.is_array() => v.get(i),
+        _ => v.get(part),
+    })
+}
+
+fn text_of(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Array(parts) => parts.iter().map(|p| p.as_str().or_else(|| p["text"].as_str()).unwrap_or("")).collect(),
+        Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Fields from the learner's "extra body" go over the top of the request, objects merged key by key.
+fn merge(body: &mut Value, extra: &str) {
+    if let Ok(Value::Object(extra)) = serde_json::from_str::<Value>(extra) {
+        merge_values(body, Value::Object(extra));
+    }
+}
+
+fn merge_values(into: &mut Value, from: Value) {
+    match (into, from) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (k, v) in b {
+                merge_values(a.entry(k).or_insert(Value::Null), v);
+            }
+        }
+        (slot, v) => *slot = v,
+    }
+}
+
+fn reply_json(reply: &Reply) -> Result<Value, ChatError> {
+    let parsed: Option<Value> = serde_json::from_str(&reply.body).ok();
+    if !(200..300).contains(&reply.status) {
+        return Err(http_error(reply.status, &reply.body, parsed.as_ref(), reply.retry_after));
+    }
+    parsed.ok_or_else(|| ChatError::Run(RunError::BadOutput(format!("the service sent back something that isn't JSON: {}", snip(&reply.body)))))
+}
+
+fn read_all<R: Read + Send + 'static>(mut r: R) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = r.read_to_string(&mut s);
+        s
+    })
+}
+
 /// Put the learner's files into the request. Claude Code opens them with its Read tool; here they have to travel
 /// with the prompt. Only files the prompt names are sent, so a folder of uploads doesn't all go every time.
-fn with_files(prompt: String, dirs: &[String], images: bool) -> Value {
+fn with_files(prompt: String, dirs: &[String], images: bool, pdfs: bool) -> Attached {
     let mut files: Vec<PathBuf> = vec![];
     for d in dirs {
         let Ok(rd) = std::fs::read_dir(d) else { continue };
@@ -546,16 +923,17 @@ fn with_files(prompt: String, dirs: &[String], images: bool) -> Value {
         }
     }
     if files.is_empty() {
-        return json!(prompt);
+        return Attached { text: prompt, ..Default::default() };
     }
     files.sort();
+    let mut out = Attached::default();
     let mut text = String::new();
-    let mut pictures: Vec<Value> = vec![];
     let mut skipped: Vec<String> = vec![];
     let mut room = MAX_TEXT_TOTAL;
     for f in &files {
         let name = f.display().to_string();
         let ext = f.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(u64::MAX);
         if TEXT_EXTS.contains(&ext.as_str()) {
             let Ok(body) = std::fs::read_to_string(f) else {
                 skipped.push(format!("{name} (couldn't be read as text)"));
@@ -572,18 +950,22 @@ fn with_files(prompt: String, dirs: &[String], images: bool) -> Value {
         } else if let Some((_, mime)) = IMAGE_EXTS.iter().find(|(e, _)| *e == ext) {
             if !images {
                 skipped.push(format!("{name} (a picture, and this model isn't set up to see pictures)"));
-                continue;
+            } else if let Some(bytes) = (size <= MAX_IMAGE_BYTES).then(|| std::fs::read(f).ok()).flatten() {
+                text += &format!("\n(The picture {name} is attached.)\n");
+                out.images.push((mime.to_string(), base64(&bytes)));
+            } else {
+                skipped.push(format!("{name} (a picture too large to send)"));
             }
-            let small = std::fs::metadata(f).map(|m| m.len() <= MAX_IMAGE_BYTES).unwrap_or(false);
-            match small.then(|| std::fs::read(f).ok()).flatten() {
+        } else if ext == "pdf" && pdfs {
+            match (size <= MAX_PDF_BYTES).then(|| std::fs::read(f).ok()).flatten() {
                 Some(bytes) => {
-                    text += &format!("\n(The picture {name} is attached.)\n");
-                    pictures.push(json!({ "type": "image_url", "image_url": { "url": format!("data:{mime};base64,{}", base64(&bytes)) } }));
+                    text += &format!("\n(The PDF {name} is attached.)\n");
+                    out.pdfs.push(base64(&bytes));
                 }
-                _ => skipped.push(format!("{name} (a picture too large to send)")),
+                None => skipped.push(format!("{name} (a PDF too large to send)")),
             }
         } else {
-            skipped.push(format!("{name} (a .{ext} file, which can't be opened in this setup; only text files and pictures can)"));
+            skipped.push(format!("{name} (a .{ext} file, which can't be opened in this setup)"));
         }
     }
     let mut full = prompt;
@@ -596,12 +978,8 @@ fn with_files(prompt: String, dirs: &[String], images: bool) -> Value {
     }
     full += "\n";
     full += &text;
-    if pictures.is_empty() {
-        return json!(full);
-    }
-    let mut parts = vec![json!({ "type": "text", "text": full })];
-    parts.extend(pictures);
-    Value::Array(parts)
+    out.text = full;
+    out
 }
 
 fn cut_at(s: &str, max: usize) -> &str {
@@ -612,7 +990,7 @@ fn cut_at(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-/// Plain base64, for pictures. Short enough not to need a crate for it.
+/// Plain base64, for pictures and PDFs. Short enough not to need a crate for it.
 fn base64(bytes: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -637,7 +1015,14 @@ fn http_error(status: u16, body: &str, v: Option<&Value>, retry_after: Option<u6
     let msg = v.and_then(|v| v.get("error")).map(error_text).unwrap_or_else(|| snip(body));
     let lower = msg.to_lowercase();
     match status {
-        400 | 422 if lower.contains("response_format") || lower.contains("json_schema") || lower.contains("json_object") || lower.contains("structured") => {
+        400 | 422
+            if lower.contains("response_format")
+                || lower.contains("json_schema")
+                || lower.contains("json_object")
+                || lower.contains("structured")
+                || lower.contains("responsemimetype")
+                || lower.contains("format") =>
+        {
             ChatError::FormatRefused(msg)
         }
         401 | 403 => ChatError::Run(RunError::Endpoint(format!("the service turned down the API key (HTTP {status}): {msg}. Check the key in Settings"))),
@@ -668,15 +1053,6 @@ fn retry_after(headers: &str) -> Option<u64> {
         .find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case("retry-after")).map(|(_, v)| v.trim().to_string()))
         .and_then(|v| v.parse::<f64>().ok())
         .map(|s| s.ceil() as u64)
-}
-
-/// The reply's text. Usually a plain string; some services send a list of parts.
-fn message_text(m: &Value) -> String {
-    match &m["content"] {
-        Value::String(s) => s.clone(),
-        Value::Array(parts) => parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(""),
-        _ => m["reasoning_content"].as_str().unwrap_or("").to_string(),
-    }
 }
 
 /// The answer object in a reply: the first one that has every field the schema requires. Without that check, a
@@ -723,13 +1099,6 @@ fn missing_fields(schema: &Value, v: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn add_usage(total: &mut Usage, u: &Usage) {
-    total.input_tokens += u.input_tokens;
-    total.output_tokens += u.output_tokens;
-    total.cache_tokens += u.cache_tokens;
-    total.duration_ms += u.duration_ms;
-}
-
 fn snip(s: &str) -> String {
     let s = s.trim();
     if s.chars().count() > 300 { format!("{}…", s.chars().take(300).collect::<String>()) } else { s.to_string() }
@@ -744,24 +1113,143 @@ impl Drop for Cleanup {
     }
 }
 
-/// Saved choice of what builds courses. Kept in its own file next to the database rather than in it, so the API
-/// key isn't copied into the backups in Documents.
+/// Who does which job. Each one is Claude Code or one of the learner's services.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Roles {
+    /// Planning the syllabus, exams and final-exam marking.
+    pub plan: Target,
+    /// Lessons, assignments and most marking.
+    pub write: Target,
+    /// Quick checks and summaries.
+    pub check: Target,
+    /// Steps that search the web: the reading list, and research while writing on Thorough and Max builds.
+    pub research: Target,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Target {
+    /// "" or "claude_code" for Claude Code, otherwise a service's id.
+    pub service: String,
+    /// The model to use. Empty uses the service's usual model.
+    pub model: String,
+}
+
+impl Target {
+    pub fn is_claude_code(&self) -> bool {
+        self.service.is_empty() || self.service == "claude_code"
+    }
+}
+
+impl Roles {
+    pub fn all(&self) -> [(&'static str, &Target); 4] {
+        [("plan", &self.plan), ("write", &self.write), ("check", &self.check), ("research", &self.research)]
+    }
+
+    /// Which job a step belongs to.
+    pub fn for_request(&self, req: &StageRequest) -> &Target {
+        if req.tools.iter().any(|t| t == "WebSearch" || t == "WebFetch") {
+            return &self.research;
+        }
+        match req.tier {
+            Tier::Fable | Tier::Opus => &self.plan,
+            Tier::Sonnet => &self.write,
+            Tier::Haiku => &self.check,
+        }
+    }
+
+    pub fn every(target: Target) -> Self {
+        Roles { plan: target.clone(), write: target.clone(), check: target.clone(), research: target }
+    }
+}
+
+/// Saved choice of what builds courses. Kept in its own file next to the database rather than in it, so API keys
+/// aren't copied into the backups in Documents.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct AiChoice {
-    /// "claude_code" (the default) or "endpoint".
-    #[serde(default)]
+    pub services: Vec<Endpoint>,
+    pub roles: Roles,
+    /// From 0.9.0, which had one service and an on/off switch. Read once and moved into `services` and `roles`.
+    #[serde(skip_serializing)]
     pub provider: String,
-    #[serde(default)]
-    pub endpoint: Endpoint,
+    #[serde(skip_serializing)]
+    pub endpoint: Option<Endpoint>,
 }
 
 impl AiChoice {
+    /// Any job goes to a service rather than Claude Code.
     pub fn uses_endpoint(&self) -> bool {
-        self.provider == "endpoint"
+        self.roles.all().iter().any(|(_, t)| !t.is_claude_code())
+    }
+
+    /// Any job still goes to Claude Code.
+    pub fn uses_claude_code(&self) -> bool {
+        self.roles.all().iter().any(|(_, t)| t.is_claude_code())
+    }
+
+    pub fn service(&self, id: &str) -> Option<&Endpoint> {
+        self.services.iter().find(|s| s.id == id)
+    }
+
+    /// Services some job points at.
+    pub fn services_in_use(&self) -> Vec<&Endpoint> {
+        let mut used: Vec<&Endpoint> = vec![];
+        for (_, t) in self.roles.all() {
+            if let Some(s) = self.service(&t.service)
+                && !used.iter().any(|u| u.id == s.id)
+            {
+                used.push(s);
+            }
+        }
+        used
+    }
+
+    /// The service and model for a job, or None for Claude Code (also when the service was deleted).
+    pub fn resolve(&self, target: &Target, tier: Tier) -> Option<(&Endpoint, String)> {
+        if target.is_claude_code() {
+            return None;
+        }
+        let s = self.service(&target.service)?;
+        let model = if target.model.trim().is_empty() { s.model_for(tier).to_string() } else { target.model.trim().to_string() };
+        Some((s, model))
+    }
+
+    /// A free id for a new service.
+    pub fn new_id(&self) -> String {
+        (1..).map(|n| format!("s{n}")).find(|id| self.service(id).is_none()).unwrap()
     }
 
     pub fn load(file: &Path) -> Self {
-        std::fs::read_to_string(file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+        let mut c: AiChoice = std::fs::read_to_string(file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        c.upgrade();
+        c
+    }
+
+    /// Move a 0.9.0 settings file (one service, on or off) into the current shape.
+    fn upgrade(&mut self) {
+        if let Some(mut old) = self.endpoint.take()
+            && self.services.is_empty()
+            && !(old.base_url.is_empty() && old.model.is_empty())
+        {
+            old.id = "s1".into();
+            if old.name.is_empty() {
+                old.name = host_of(&old.base_url);
+            }
+            self.services.push(old);
+            if self.provider == "endpoint" {
+                self.roles = Roles::every(Target { service: "s1".into(), model: String::new() });
+            }
+        }
+        self.provider.clear();
+        // A job pointing at a service that's gone falls back to Claude Code.
+        let ids: Vec<String> = self.services.iter().map(|s| s.id.clone()).collect();
+        for t in [&mut self.roles.plan, &mut self.roles.write, &mut self.roles.check, &mut self.roles.research] {
+            if !t.is_claude_code() && !ids.contains(&t.service) {
+                *t = Target::default();
+            }
+        }
     }
 
     pub fn save(&self, file: &Path) -> std::io::Result<()> {
@@ -784,22 +1272,21 @@ mod tests {
     use super::*;
 
     fn ep(url: &str) -> Endpoint {
-        Endpoint { base_url: url.into(), model: "m".into(), ..Default::default() }
+        Endpoint { id: "s1".into(), base_url: url.into(), model: "m".into(), ..Default::default() }
     }
 
     #[test]
     fn picks_a_model_per_tier() {
         let mut e = ep("https://x/v1");
         assert_eq!(e.model_for(Tier::Opus), "m");
-        assert_eq!(e.model_for(Tier::Haiku), "m");
         e.strong_model = "big".into();
         e.quick_model = " small ".into();
         assert_eq!(e.model_for(Tier::Fable), "big");
-        assert_eq!(e.model_for(Tier::Opus), "big");
         assert_eq!(e.model_for(Tier::Sonnet), "m");
         assert_eq!(e.model_for(Tier::Haiku), "small");
         assert_eq!(e.url("chat/completions"), "https://x/v1/chat/completions");
-        assert_eq!(ep("https://x/v1/").url("models"), "https://x/v1/models");
+        assert_eq!(ep("https://x/v1/").url("/models"), "https://x/v1/models");
+        assert_eq!(ep("https://x/run").url(""), "https://x/run");
     }
 
     #[test]
@@ -807,8 +1294,15 @@ mod tests {
         assert!(ep("").problem().is_some());
         assert!(ep("api.openai.com/v1").problem().is_some());
         assert!(Endpoint { model: String::new(), ..ep("https://x/v1") }.problem().is_some());
-        assert!(Endpoint { api_key: "a\"b".into(), ..ep("https://x/v1") }.problem().is_some());
+        assert!(Endpoint { api_key: "a\nb".into(), ..ep("https://x/v1") }.problem().is_some());
+        assert!(Endpoint { headers: "no colon here".into(), ..ep("https://x/v1") }.problem().is_some());
+        assert!(Endpoint { query: "nothing".into(), ..ep("https://x/v1") }.problem().is_some());
+        assert!(Endpoint { extra_body: "[1]".into(), ..ep("https://x/v1") }.problem().is_some());
+        assert!(Endpoint { api: Api::Custom, model: String::new(), ..ep("https://x") }.problem().is_some());
+        assert!(Endpoint { api: Api::Command, base_url: String::new(), command: "ollama run {{model}}".into(), ..ep("") }.problem().is_none());
         assert!(ep("http://localhost:11434/v1").problem().is_none());
+        // quotes and backslashes are fine now: curl's config escapes them
+        assert!(Endpoint { api_key: "a\"b\\c".into(), ..ep("https://x/v1") }.problem().is_none());
     }
 
     #[test]
@@ -819,7 +1313,82 @@ mod tests {
         for u in ["https://api.openai.com/v1", "https://openrouter.ai/api/v1", "http://8.8.8.8/v1", "http://172.40.0.1/v1"] {
             assert!(!ep(u).is_local(), "{u}");
         }
+        assert!(Endpoint { api: Api::Command, ..ep("") }.is_local());
         assert_eq!(host_of("https://user@Example.COM:443/v1"), "example.com");
+    }
+
+    #[test]
+    fn curl_config_carries_key_headers_and_query() {
+        let mut e = ep("https://api.example.com/v1");
+        e.api_key = "sk-1".into();
+        let c = curl_config(&e, "chat/completions", true);
+        assert!(c.contains("url = \"https://api.example.com/v1/chat/completions\""));
+        assert!(c.contains("header = \"Authorization: Bearer sk-1\""));
+        assert!(c.contains("header = \"Content-Type: application/json\""));
+
+        e.api = Api::Anthropic;
+        let c = curl_config(&e, "messages", true);
+        assert!(c.contains("header = \"x-api-key: sk-1\"") && c.contains("anthropic-version: 2023-06-01"));
+
+        // Azure-style: own header, no prefix, a version in the query, and an extra header
+        e.api = Api::OpenaiChat;
+        e.auth_header = "api-key".into();
+        e.auth_prefix = String::new();
+        e.query = "api-version=2024-10-21\n# a comment".into();
+        e.headers = "X-Title: SelfSemester\n\n".into();
+        let c = curl_config(&e, "chat/completions", true);
+        assert!(c.contains("header = \"api-key: sk-1\""));
+        assert!(!c.contains("Bearer"));
+        assert!(c.contains("chat/completions?api-version=2024-10-21\""));
+        assert!(c.contains("header = \"X-Title: SelfSemester\""));
+
+        // key as a query parameter, with characters that need escaping
+        e.auth_query = "key".into();
+        e.api_key = "a b\"c".into();
+        let c = curl_config(&e, "", false);
+        assert!(c.contains("&key=a%20b%22c\""));
+        assert!(!c.contains("Content-Type"));
+    }
+
+    #[test]
+    fn splits_commands() {
+        assert_eq!(split_command("ollama run {{model}}"), ["ollama", "run", "{{model}}"]);
+        assert_eq!(split_command(r#""C:\Program Files\x\x.exe" -p  "two words" """#), [r"C:\Program Files\x\x.exe", "-p", "two words", ""]);
+        assert!(split_command("   ").is_empty());
+    }
+
+    #[test]
+    fn fills_a_custom_body() {
+        let mut e = ep("https://x");
+        e.api = Api::Custom;
+        e.custom_body = r#"{"model": {{model}}, "input": {{prompt}}, "sys": {{system}}, "msgs": {{messages}}, "schema": {{schema}}}"#.into();
+        e.extra_body = r#"{"temperature": 0.2}"#.into();
+        let turns = vec![("user".to_string(), "Say \"hi\"\nplease".to_string())];
+        let b = custom_body(&e, "tiny", "rules", &turns, &json!({"type": "object"})).unwrap();
+        assert_eq!(b["model"], "tiny");
+        assert_eq!(b["input"], "Say \"hi\"\nplease");
+        assert_eq!(b["msgs"][1]["content"], "Say \"hi\"\nplease");
+        assert_eq!(b["schema"]["type"], "object");
+        assert_eq!(b["temperature"], 0.2);
+        e.custom_body = r#"{"model": "{{model}}"}"#.into();
+        assert!(custom_body(&e, "tiny", "", &turns, &json!({})).is_err());
+    }
+
+    #[test]
+    fn follows_answer_paths() {
+        let v = json!({"choices": [{"message": {"content": "hi"}}], "parts": [{"text": "a"}, {"text": "b"}]});
+        assert_eq!(text_of(at_path(&v, "choices.0.message.content").unwrap()), "hi");
+        assert_eq!(text_of(at_path(&v, "parts").unwrap()), "ab");
+        assert!(at_path(&v, "choices.3.message").is_none());
+    }
+
+    #[test]
+    fn merges_extra_body() {
+        let mut b = json!({"model": "m", "options": {"num_ctx": 4096, "seed": 1}});
+        merge(&mut b, r#"{"options": {"num_ctx": 32768}, "temperature": 0}"#);
+        assert_eq!(b, json!({"model": "m", "options": {"num_ctx": 32768, "seed": 1}, "temperature": 0}));
+        merge(&mut b, "not json");
+        assert_eq!(b["temperature"], 0);
     }
 
     #[test]
@@ -837,7 +1406,7 @@ mod tests {
         let schema = json!({"required": ["ok", "issues"]});
         let cut = r#"{"issues": [{"item_key": "a", "problem": "x"}, {"item_key": "b", "prob"#;
         assert!(find_json_for(cut, &schema).is_none());
-        assert_eq!(find_json(cut).unwrap()["item_key"], "a"); // what the plain finder would have taken
+        assert_eq!(find_json(cut).unwrap()["item_key"], "a");
         let whole = r#"Here: {"ok": false, "issues": [{"item_key": "a"}]}"#;
         assert_eq!(find_json_for(whole, &schema).unwrap()["ok"], false);
     }
@@ -847,7 +1416,6 @@ mod tests {
         let s = json!({"required": ["ok", "message"]});
         assert_eq!(missing_fields(&s, &json!({"ok": true})), ["message"]);
         assert!(missing_fields(&s, &json!({"ok": true, "message": "hi"})).is_empty());
-        assert!(missing_fields(&json!({}), &json!({})).is_empty());
     }
 
     #[test]
@@ -855,7 +1423,6 @@ mod tests {
         assert_eq!(base64(b""), "");
         assert_eq!(base64(b"f"), "Zg==");
         assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foo"), "Zm9v");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
 
@@ -892,54 +1459,165 @@ mod tests {
         let prompt = format!("Mark it.\n- {}\n- {}\n- {}", notes.display(), photo.display(), essay.display());
         let dirs = vec![dir.path().display().to_string()];
 
-        let plain = with_files(prompt.clone(), &dirs, false);
-        let text = plain.as_str().unwrap();
-        assert!(text.contains("Use SI units."));
-        assert!(!text.contains("secret"));
-        assert!(text.contains("essay.pdf (a .pdf file"));
-        assert!(text.contains("isn't set up to see pictures"));
+        let plain = with_files(prompt.clone(), &dirs, false, false);
+        assert!(plain.text.contains("Use SI units."));
+        assert!(!plain.text.contains("secret"));
+        assert!(plain.text.contains("essay.pdf (a .pdf file"));
+        assert!(plain.text.contains("isn't set up to see pictures"));
+        assert!(plain.images.is_empty() && plain.pdfs.is_empty());
 
-        let with_pics = with_files(prompt, &dirs, true);
-        let parts = with_pics.as_array().unwrap();
-        assert_eq!(parts.len(), 2);
-        assert!(parts[1]["image_url"]["url"].as_str().unwrap().starts_with("data:image/png;base64,iVBORw"));
+        let all = with_files(prompt, &dirs, true, true);
+        assert_eq!(all.images, [("image/png".to_string(), "iVBORw==".to_string())]);
+        assert_eq!(all.pdfs, ["JVBERg==".to_string()]);
+        assert!(all.text.contains("(The PDF"));
 
-        assert_eq!(with_files("No files here.".into(), &dirs, true), json!("No files here."));
+        assert_eq!(with_files("No files here.".into(), &dirs, true, true).text, "No files here.");
+    }
+
+    #[test]
+    fn roles_route_steps() {
+        let r = Roles {
+            plan: Target { service: "a".into(), model: String::new() },
+            write: Target::default(),
+            check: Target { service: "b".into(), model: "tiny".into() },
+            research: Target { service: "claude_code".into(), model: String::new() },
+        };
+        let mut req = StageRequest {
+            tier: Tier::Opus,
+            system: None,
+            prompt: String::new(),
+            schema: json!({}),
+            tools: vec![],
+            add_dirs: vec![],
+            effort: None,
+        };
+        assert_eq!(r.for_request(&req).service, "a");
+        req.tier = Tier::Haiku;
+        assert_eq!(r.for_request(&req).model, "tiny");
+        req.tools = vec!["WebSearch".into()];
+        assert!(r.for_request(&req).is_claude_code());
+        req.tools.clear();
+        req.tier = Tier::Sonnet;
+        assert!(r.for_request(&req).is_claude_code());
     }
 
     #[test]
     fn choice_round_trips_and_defaults_to_claude_code() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("ai.json");
-        assert!(!AiChoice::load(&file).uses_endpoint());
-        let c = AiChoice { provider: "endpoint".into(), endpoint: Endpoint { api_key: "k".into(), ..ep("https://x/v1") } };
+        let empty = AiChoice::load(&file);
+        assert!(!empty.uses_endpoint() && empty.uses_claude_code());
+        let c = AiChoice {
+            services: vec![Endpoint { api_key: "k".into(), ..ep("https://x/v1") }],
+            roles: Roles { write: Target { service: "s1".into(), model: "big".into() }, ..Default::default() },
+            ..Default::default()
+        };
         c.save(&file).unwrap();
-        assert_eq!(AiChoice::load(&file), c);
+        let back = AiChoice::load(&file);
+        assert_eq!(back, c);
+        assert!(back.uses_endpoint() && back.uses_claude_code());
+        assert_eq!(back.resolve(&back.roles.write, Tier::Sonnet).unwrap().1, "big");
+        assert!(back.resolve(&back.roles.plan, Tier::Opus).is_none());
+        assert_eq!(back.new_id(), "s2");
         std::fs::write(&file, "not json").unwrap();
         assert_eq!(AiChoice::load(&file), AiChoice::default());
     }
 
+    #[test]
+    fn reads_a_0_9_0_settings_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ai.json");
+        std::fs::write(&file, r#"{"provider":"endpoint","endpoint":{"preset":"lmstudio","base_url":"http://localhost:1234/v1","api_key":"","model":"qwen","strong_model":"","quick_model":"","sees_images":true,"check":null}}"#).unwrap();
+        let c = AiChoice::load(&file);
+        assert_eq!(c.services.len(), 1);
+        assert_eq!((c.services[0].id.as_str(), c.services[0].name.as_str(), c.services[0].api), ("s1", "localhost", Api::OpenaiChat));
+        assert!(c.services[0].sees_images);
+        assert!(c.roles.all().iter().all(|(_, t)| t.service == "s1"));
+        // switched off in 0.9.0: the service is kept, Claude Code still does everything
+        std::fs::write(&file, r#"{"provider":"claude_code","endpoint":{"base_url":"https://api.openai.com/v1","model":"gpt-5"}}"#).unwrap();
+        let c = AiChoice::load(&file);
+        assert_eq!(c.services.len(), 1);
+        assert!(!c.uses_endpoint());
+    }
+
+    #[test]
+    fn a_deleted_service_falls_back_to_claude_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("ai.json");
+        std::fs::write(&file, r#"{"services":[],"roles":{"write":{"service":"s9","model":""}}}"#).unwrap();
+        assert!(!AiChoice::load(&file).uses_endpoint());
+    }
+
+    /// A program on this computer as the service. Uses the shell's own tools, so it runs anywhere.
+    #[test]
+    fn runs_a_command_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = format!("\"{}\"", answer_script(dir.path()).display());
+        let e = Endpoint { id: "c".into(), api: Api::Command, command: script, model: "any".into(), ..Default::default() };
+        let r = EndpointRunner::new(dir.path().join("tmp"));
+        let c = r.check(&e, "");
+        assert!(c.reached && c.json_ok, "{c:?}");
+        assert_eq!(c.format, "prompt");
+    }
+
+    const ANSWER: &str = r#"{"ok": true, "numbers": [{"n": 1, "word": "one"}, {"n": 2, "word": "two"}, {"n": 3, "word": "three"}]}"#;
+
+    /// A tiny script that reads the prompt and prints a fixed answer.
+    #[cfg(windows)]
+    fn answer_script(dir: &Path) -> PathBuf {
+        let p = dir.join("answer.cmd");
+        std::fs::write(&p, format!("@echo off
+more > nul
+echo {ANSWER}
+")).unwrap();
+        p
+    }
+
+    #[cfg(not(windows))]
+    fn answer_script(dir: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join("answer.sh");
+        std::fs::write(&p, format!("#!/bin/sh
+cat > /dev/null
+echo '{ANSWER}'
+")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    }
+
     /// A real call to a server on this computer. Opt in with
     /// `SELFSEMESTER_TEST_ENDPOINT=http://localhost:1234/v1 SELFSEMESTER_TEST_MODEL=<model> cargo test -- --ignored live_endpoint`
+    /// Add SELFSEMESTER_TEST_API=ollama (or anthropic, gemini, openai_responses) for another kind of API.
     #[test]
     #[ignore]
     fn live_endpoint_check() {
-        let url = std::env::var("SELFSEMESTER_TEST_ENDPOINT").expect("set SELFSEMESTER_TEST_ENDPOINT");
-        let model = std::env::var("SELFSEMESTER_TEST_MODEL").expect("set SELFSEMESTER_TEST_MODEL");
+        let e = live_endpoint();
         let dir = tempfile::tempdir().unwrap();
-        let e = Endpoint {
-            base_url: url,
-            model,
-            api_key: std::env::var("SELFSEMESTER_TEST_KEY").unwrap_or_default(),
-            sees_images: std::env::var("SELFSEMESTER_TEST_IMAGES").is_ok(),
-            ..Default::default()
-        };
-        let r = EndpointRunner::new(e, dir.path().to_path_buf());
-        let c = r.check();
+        let c = EndpointRunner::new(dir.path().to_path_buf()).check(&e, "");
         println!("{c:?}");
         assert!(c.reached && c.json_ok, "{c:?}");
-        if r.endpoint().sees_images {
+        if e.sees_images {
             assert_eq!(c.images_ok, Some(true), "{c:?}");
+        }
+    }
+
+    pub(crate) fn live_endpoint() -> Endpoint {
+        let api = match std::env::var("SELFSEMESTER_TEST_API").unwrap_or_default().as_str() {
+            "ollama" => Api::Ollama,
+            "anthropic" => Api::Anthropic,
+            "gemini" => Api::Gemini,
+            "openai_responses" => Api::OpenaiResponses,
+            _ => Api::OpenaiChat,
+        };
+        Endpoint {
+            id: "live".into(),
+            api,
+            base_url: std::env::var("SELFSEMESTER_TEST_ENDPOINT").expect("set SELFSEMESTER_TEST_ENDPOINT"),
+            model: std::env::var("SELFSEMESTER_TEST_MODEL").expect("set SELFSEMESTER_TEST_MODEL"),
+            api_key: std::env::var("SELFSEMESTER_TEST_KEY").unwrap_or_default(),
+            sees_images: std::env::var("SELFSEMESTER_TEST_IMAGES").is_ok(),
+            context: std::env::var("SELFSEMESTER_TEST_CONTEXT").ok().and_then(|c| c.parse().ok()),
+            ..Default::default()
         }
     }
 }

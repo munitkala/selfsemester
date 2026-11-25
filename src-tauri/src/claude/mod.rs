@@ -13,6 +13,7 @@ pub mod cli;
 pub mod endpoint;
 pub mod fit;
 pub mod output;
+pub mod styles;
 
 pub use backend::Backend;
 pub use cli::CliRunner;
@@ -106,7 +107,8 @@ pub struct StageOutput {
 /// Deliberately holds no account details, tokens or keys.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ClaudeStatus {
-    /// "claude_code" or "endpoint". For an endpoint, `path` is its address and `version` the model.
+    /// "claude_code", "endpoint" (services do every job) or "mixed". For "endpoint", `path` is the address and
+    /// `version` the model of the first service in use.
     pub provider: String,
     pub installed: bool,
     pub path: Option<String>,

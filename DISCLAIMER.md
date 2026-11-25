@@ -70,8 +70,8 @@ your rights, open an issue on GitHub and it will be looked at promptly.
 - Course requests and the work you submit for marking (including uploaded photos and files) are **sent to Anthropic**
   through your Claude Code. Don't submit anything you aren't comfortable sharing with Anthropic, or anything that
   contains other people's personal information.
-- If you set up another AI service in Settings instead, course requests and submitted work are **sent to that
-  service**, and your use of it is governed by **your own agreement with that provider**, including any charges.
+- For any job you give to another AI service or program in Settings, course requests and submitted work are **sent
+  to that service** instead, and your use of it is governed by **your own agreement with that provider**, including any charges.
   The authors accept no responsibility for other services either, or for how well a course built with one turns
   out. Settings describes what each setup can and can't do, but that report is an estimate, not a promise.
 - SelfSemester is an independent project. It isn't made by, affiliated with or endorsed by Anthropic or any other
